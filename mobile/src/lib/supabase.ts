@@ -68,6 +68,9 @@ export type DailyLog = {
     date: string;
     calories_in: number;
     calories_out: number;
+    protein: number;
+    carbs: number;
+    fat: number;
     water_ml: number;
     steps: number;
     active_minutes: number;

@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, UtensilsCrossed, MessageCircle, User } from 'lucide-react-native';
+import { LayoutDashboard, Camera, Bot, UserCircle } from 'lucide-react-native';
 import { useThemeStore } from '@/store/useThemeStore';
 
 export default function TabsLayout() {
@@ -13,14 +13,14 @@ export default function TabsLayout() {
                     backgroundColor: colors.background,
                     borderTopColor: colors.border,
                     borderTopWidth: 1,
-                    height: 60,
-                    paddingBottom: 8,
+                    height: 65,
+                    paddingBottom: 10,
                     paddingTop: 8,
                 },
                 tabBarActiveTintColor: colors.primary,
                 tabBarInactiveTintColor: colors.mutedForeground,
                 tabBarLabelStyle: {
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: '500',
                 },
             }}
@@ -29,28 +29,28 @@ export default function TabsLayout() {
                 name="dashboard"
                 options={{
                     title: 'Dashboard',
-                    tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
+                    tabBarIcon: ({ color, size }) => <LayoutDashboard color={color} size={size} />,
                 }}
             />
             <Tabs.Screen
                 name="meals"
                 options={{
                     title: 'Meals',
-                    tabBarIcon: ({ color, size }) => <UtensilsCrossed color={color} size={size} />,
+                    tabBarIcon: ({ color, size }) => <Camera color={color} size={size} />,
                 }}
             />
             <Tabs.Screen
                 name="chat"
                 options={{
                     title: 'FitBuddy',
-                    tabBarIcon: ({ color, size }) => <MessageCircle color={color} size={size} />,
+                    tabBarIcon: ({ color, size }) => <Bot color={color} size={size} />,
                 }}
             />
             <Tabs.Screen
                 name="profile"
                 options={{
                     title: 'Profile',
-                    tabBarIcon: ({ color, size }) => <User color={color} size={size} />,
+                    tabBarIcon: ({ color, size }) => <UserCircle color={color} size={size} />,
                 }}
             />
             <Tabs.Screen
@@ -62,3 +62,4 @@ export default function TabsLayout() {
         </Tabs>
     );
 }
+

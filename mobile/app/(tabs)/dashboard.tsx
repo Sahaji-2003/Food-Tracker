@@ -1,14 +1,17 @@
-import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Alert, Modal, ActivityIndicator } from 'react-native';
+import { useState, useCallback } from 'react';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Modal, ActivityIndicator, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Flame, Droplets, Footprints, Activity, Trash2, CheckCircle, X, Zap } from 'lucide-react-native';
+import { Flame, Droplets, Trash2, CheckCircle, X, Zap, ChevronRight, Eye } from 'lucide-react-native';
+import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import Markdown from 'react-native-markdown-display';
 import { router, useFocusEffect } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { useThemeStore } from '@/store/useThemeStore';
 import { dailyAPI, mealAPI } from '@/lib/api';
-import { formatCalories, calculateCaloriePercentage } from '@/lib/utils';
+import { formatCalories } from '@/lib/utils';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 interface BurnTask {
     meal_id: string;
@@ -33,6 +36,125 @@ interface GroupedTask {
     tasks: BurnTask[];
 }
 
+// Circular progress component with SVG
+const CircularProgress = ({ percentage, size, strokeWidth, colors }: { percentage: number; size: number; strokeWidth: number; colors: any }) => {
+    const radius = (size - strokeWidth) / 2;
+    const circumference = radius * 2 * Math.PI;
+    const strokeDashoffset = circumference - (Math.min(percentage, 100) / 100) * circumference;
+
+    return (
+        <Svg width={size} height={size}>
+            <Defs>
+                <SvgLinearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <Stop offset="0%" stopColor="#22c55e" />
+                    <Stop offset="100%" stopColor="#16a34a" />
+                </SvgLinearGradient>
+            </Defs>
+            {/* Background circle */}
+            <Circle
+                cx={size / 2}
+                cy={size / 2}
+                r={radius}
+                stroke="#2a3a2a"
+                strokeWidth={strokeWidth}
+                fill="transparent"
+            />
+            {/* Progress circle */}
+            <Circle
+                cx={size / 2}
+                cy={size / 2}
+                r={radius}
+                stroke="url(#progressGradient)"
+                strokeWidth={strokeWidth}
+                fill="transparent"
+                strokeDasharray={circumference}
+                strokeDashoffset={strokeDashoffset}
+                strokeLinecap="round"
+                transform={`rotate(-90 ${size / 2} ${size / 2})`}
+            />
+        </Svg>
+    );
+};
+
+// Weekly bar chart component
+const WeeklyBarChart = ({ data, colors }: { data: number[]; colors: any }) => {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const maxValue = Math.max(...data, 1) * 1.2;
+    const todayIndex = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+
+    return (
+        <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.foreground, fontWeight: '600', fontSize: 14, marginBottom: 8 }}>Weekly Overview</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 80, gap: 4 }}>
+                {data.map((value, index) => {
+                    const height = Math.max((value / maxValue) * 70, 4);
+                    const isToday = index === todayIndex;
+                    return (
+                        <View key={index} style={{ flex: 1, alignItems: 'center' }}>
+                            <View
+                                style={{
+                                    width: '100%',
+                                    height: height,
+                                    backgroundColor: isToday ? '#f59e0b' : '#22c55e',
+                                    borderRadius: 4,
+                                    opacity: isToday ? 1 : 0.7,
+                                }}
+                            />
+                            <Text style={{ color: colors.mutedForeground, fontSize: 9, marginTop: 4 }}>{days[index]}</Text>
+                        </View>
+                    );
+                })}
+            </View>
+        </View>
+    );
+};
+
+// Task card for horizontal scroll
+const TaskCard = ({ task, onPress, colors }: { task: GroupedTask; onPress: () => void; colors: any }) => (
+    <TouchableOpacity
+        onPress={onPress}
+        style={{
+            backgroundColor: colors.secondary,
+            borderRadius: 16,
+            padding: 14,
+            width: 150,
+            marginRight: 12,
+        }}
+    >
+        <Text style={{ color: colors.foreground, fontWeight: '600', fontSize: 14, marginBottom: 4 }} numberOfLines={2}>
+            {task.name}
+        </Text>
+        <Text style={{ color: colors.mutedForeground, fontSize: 12, marginBottom: 8 }}>
+            {task.total_steps > 0 ? `${task.total_steps.toLocaleString()} steps · ` : ''}{task.total_duration} min
+        </Text>
+        <Text style={{ color: '#f59e0b', fontSize: 13, fontWeight: '600' }}>
+            {task.total_calories} cal
+        </Text>
+        <TouchableOpacity
+            onPress={onPress}
+            style={{ marginTop: 8, paddingVertical: 6, backgroundColor: colors.muted, borderRadius: 8, alignItems: 'center' }}
+        >
+            <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '500' }}>View</Text>
+        </TouchableOpacity>
+    </TouchableOpacity>
+);
+
+// Macro/Hydration progress bar
+const ProgressBar = ({ label, value, max, color, unit = 'g', colors }: { label: string; value: number; max: number; color: string; unit?: string; colors: any }) => {
+    const percentage = Math.min((value / max) * 100, 100);
+    return (
+        <View style={{ flex: 1, marginHorizontal: 4 }}>
+            <Text style={{ color: colors.foreground, fontWeight: '500', fontSize: 13, marginBottom: 6 }}>{label}</Text>
+            <View style={{ height: 8, backgroundColor: colors.muted, borderRadius: 4, overflow: 'hidden' }}>
+                <View style={{ height: 8, width: `${percentage}%`, backgroundColor: color, borderRadius: 4 }} />
+            </View>
+            <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 4 }}>
+                {value}{unit} / {max}{unit}
+            </Text>
+        </View>
+    );
+};
+
 export default function DashboardScreen() {
     const { user, profile, dailyLog, setDailyLog, isOnline } = useStore();
     const { colors } = useThemeStore();
@@ -41,11 +163,20 @@ export default function DashboardScreen() {
     const [selectedGroup, setSelectedGroup] = useState<GroupedTask | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [taskActionLoading, setTaskActionLoading] = useState<string | null>(null);
+    const [weeklyData, setWeeklyData] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
 
     const fetchDailyData = async () => {
         try {
             const data = await dailyAPI.get();
             setDailyLog(data);
+
+            // Update today's value in weekly data
+            const dayIndex = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+            setWeeklyData(prev => {
+                const newData = [...prev];
+                newData[dayIndex] = data.calories_in || 0;
+                return newData;
+            });
         } catch (error) {
             console.error('Failed to fetch daily data:', error);
         }
@@ -53,7 +184,6 @@ export default function DashboardScreen() {
 
     const fetchTasks = async () => {
         try {
-            // Fetch all tasks (pending + completed from today)
             const data = await mealAPI.getTasks(undefined, true);
             setTasks(data.tasks || []);
         } catch (error) {
@@ -100,7 +230,6 @@ export default function DashboardScreen() {
         }
     };
 
-    // Auto-reload when screen gains focus
     useFocusEffect(
         useCallback(() => {
             if (user) {
@@ -116,7 +245,6 @@ export default function DashboardScreen() {
         setRefreshing(false);
     };
 
-    // Group tasks by name/type
     const groupedTasks: GroupedTask[] = tasks
         .filter(t => t.status !== 'completed')
         .reduce((groups: GroupedTask[], task) => {
@@ -139,274 +267,231 @@ export default function DashboardScreen() {
             return groups;
         }, []);
 
-    const completedCount = tasks.filter(t => t.status === 'completed').length;
-    const totalCount = tasks.length;
-
+    const completedTasks = tasks.filter(t => t.status === 'completed');
     const calorieTarget = profile?.daily_calorie_target || 2000;
     const caloriesIn = dailyLog?.calories_in || 0;
     const caloriesOut = dailyLog?.calories_out || 0;
-    const netCalories = caloriesIn - caloriesOut;
-    const caloriePercentage = calculateCaloriePercentage(caloriesIn, calorieTarget);
+    const overCalories = Math.max(caloriesIn - calorieTarget, 0);
+    const caloriePercentage = (caloriesIn / calorieTarget) * 100;
+
+    // Macro targets
+    const macroTargets = {
+        protein: Math.round((calorieTarget * 0.3) / 4),
+        carbs: Math.round((calorieTarget * 0.4) / 4),
+        fat: Math.round((calorieTarget * 0.3) / 9),
+    };
+
+    const waterTarget = profile?.daily_water_target || 2500;
+    const waterMl = dailyLog?.water_ml || 0;
+
+    const markdownStyles = {
+        body: { color: colors.mutedForeground, fontSize: 14, lineHeight: 20 },
+        heading1: { color: colors.foreground, fontSize: 18, fontWeight: 'bold' as const },
+        heading2: { color: colors.foreground, fontSize: 16, fontWeight: '600' as const },
+        strong: { fontWeight: 'bold' as const, color: colors.foreground },
+    };
+
+    if (isLoading) {
+        return (
+            <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={{ color: colors.mutedForeground, marginTop: 12 }}>Loading dashboard...</Text>
+            </SafeAreaView>
+        );
+    }
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
             <ScrollView
                 style={{ flex: 1 }}
-                contentContainerStyle={{ padding: 16 }}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
-                        tintColor={colors.primary}
-                    />
-                }
+                contentContainerStyle={{ paddingBottom: 24 }}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
             >
-                {/* Header */}
-                <View style={{ marginBottom: 24 }}>
-                    <Text style={{ fontSize: 24, fontWeight: 'bold', color: colors.foreground }}>
-                        Hello, {user?.email?.split('@')[0] || 'there'}! 👋
-                    </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                        <View
-                            style={{
-                                width: 8,
-                                height: 8,
-                                borderRadius: 4,
-                                backgroundColor: isOnline ? '#22c55e' : '#ef4444',
-                                marginRight: 8,
-                            }}
-                        />
-                        <Text style={{ color: colors.mutedForeground }}>
-                            {isOnline ? 'Online' : 'Offline'}
-                        </Text>
-                    </View>
-                </View>
-
-                {/* Calorie Overview Card */}
-                <View
-                    style={{
-                        backgroundColor: colors.secondary,
-                        borderRadius: 20,
-                        padding: 20,
-                        marginBottom: 16,
-                    }}
-                >
-                    <Text style={{ fontSize: 18, fontWeight: '600', color: colors.foreground, marginBottom: 16 }}>
-                        Today's Progress
-                    </Text>
-
-                    {/* Calorie Ring */}
-                    <View style={{ alignItems: 'center', marginBottom: 16 }}>
-                        <View
-                            style={{
-                                width: 160,
-                                height: 160,
-                                borderRadius: 80,
-                                borderWidth: 8,
-                                borderColor: colors.muted,
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                overflow: 'hidden',
-                            }}
-                        >
-                            <LinearGradient
-                                colors={[colors.gradientStart, colors.gradientEnd]}
-                                style={{
-                                    position: 'absolute',
-                                    width: '100%',
-                                    height: '100%',
-                                    borderRadius: 80,
-                                    opacity: Math.min(caloriePercentage / 100, 1),
-                                }}
-                            />
-                            <View style={{ alignItems: 'center' }}>
-                                <Text style={{ fontSize: 36, fontWeight: 'bold', color: colors.foreground }}>
-                                    {formatCalories(caloriesIn)}
-                                </Text>
-                                <Text style={{ color: colors.mutedForeground }}>
-                                    / {formatCalories(calorieTarget)} cal
-                                </Text>
-                            </View>
-                        </View>
-                    </View>
-
-                    {/* Calorie Breakdown */}
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
-                        <View style={{ alignItems: 'center' }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <Flame size={16} color="#f59e0b" />
-                                <Text style={{ color: colors.foreground, fontWeight: '600', marginLeft: 4 }}>
-                                    {formatCalories(caloriesIn)}
-                                </Text>
-                            </View>
-                            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Consumed</Text>
-                        </View>
-                        <View style={{ alignItems: 'center' }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <Activity size={16} color={colors.primary} />
-                                <Text style={{ color: colors.foreground, fontWeight: '600', marginLeft: 4 }}>
-                                    {formatCalories(caloriesOut)}
-                                </Text>
-                            </View>
-                            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Burned</Text>
-                        </View>
-                        <View style={{ alignItems: 'center' }}>
-                            <Text
-                                style={{
-                                    fontWeight: '600',
-                                    color: netCalories > calorieTarget ? '#f59e0b' : colors.primary,
-                                }}
-                            >
-                                {netCalories > 0 ? '+' : ''}{formatCalories(netCalories)}
+                {/* Header Section */}
+                <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+                    {/* Greeting & Online Status */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <View>
+                            <Text style={{ fontSize: 22, fontWeight: 'bold', color: colors.foreground }}>
+                                Hi, {user?.email?.split('@')[0] || 'there'}!
                             </Text>
-                            <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Net</Text>
-                        </View>
-                    </View>
-                </View>
-
-                {/* Water & Steps Quick Stats */}
-                <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
-                    <View
-                        style={{
-                            flex: 1,
-                            backgroundColor: colors.secondary,
-                            borderRadius: 16,
-                            padding: 16,
-                        }}
-                    >
-                        <Droplets size={24} color="#3b82f6" />
-                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: colors.foreground, marginTop: 8 }}>
-                            {dailyLog?.water_ml || 0}
-                        </Text>
-                        <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>ml water</Text>
-                    </View>
-                    <View
-                        style={{
-                            flex: 1,
-                            backgroundColor: colors.secondary,
-                            borderRadius: 16,
-                            padding: 16,
-                        }}
-                    >
-                        <Footprints size={24} color="#22c55e" />
-                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: colors.foreground, marginTop: 8 }}>
-                            {(dailyLog?.steps || 0).toLocaleString()}
-                        </Text>
-                        <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>steps</Text>
-                    </View>
-                </View>
-
-                {/* My Tasks Section - Grouped */}
-                {tasks.length > 0 && (
-                    <View style={{ marginTop: 16 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-                            <Text style={{ fontSize: 20, fontWeight: 'bold', color: colors.foreground, flex: 1 }}>
-                                My Tasks
+                            <Text style={{ color: colors.mutedForeground, fontSize: 13, marginTop: 2 }}>
+                                {formatCalories(caloriesIn)} / {formatCalories(calorieTarget)} cal
                             </Text>
-                            {totalCount > 0 && (
-                                <Text style={{ color: colors.mutedForeground }}>
-                                    {completedCount}/{totalCount} done
-                                </Text>
-                            )}
                         </View>
-                        {/* Overall Progress Bar */}
-                        {totalCount > 0 && (
-                            <View style={{ height: 8, backgroundColor: colors.muted, borderRadius: 4, marginBottom: 12 }}>
-                                <View
-                                    style={{
-                                        height: 8,
-                                        backgroundColor: colors.primary,
-                                        borderRadius: 4,
-                                        width: `${(completedCount / totalCount) * 100}%`,
-                                    }}
-                                />
-                            </View>
-                        )}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.secondary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16 }}>
+                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isOnline ? '#22c55e' : '#ef4444', marginRight: 6 }} />
+                            <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '500' }}>{isOnline ? 'Online' : 'Offline'}</Text>
+                        </View>
+                    </View>
 
-                        {/* Incomplete Tasks */}
-                        {groupedTasks.map((group, index) => (
-                            <TouchableOpacity
-                                key={`pending-${group.name}-${index}`}
-                                onPress={() => setSelectedGroup(group)}
-                                style={{
-                                    backgroundColor: colors.secondary,
-                                    borderRadius: 16,
-                                    padding: 16,
-                                    marginBottom: 8,
-                                }}
-                            >
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                    <Zap size={20} color={colors.primary} style={{ marginRight: 8 }} />
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={{ color: colors.foreground, fontWeight: '600', fontSize: 15 }}>
-                                            {group.name}
-                                            {group.tasks.length > 1 && (
-                                                <Text style={{ color: colors.primary }}> ({group.tasks.length}x)</Text>
-                                            )}
+                    {/* Main Stats Card */}
+                    <View style={{ backgroundColor: colors.secondary, borderRadius: 20, padding: 16, marginTop: 16 }}>
+                        <View style={{ flexDirection: 'row' }}>
+                            {/* Circular Progress */}
+                            <View style={{ alignItems: 'center', marginRight: 16 }}>
+                                <View style={{ position: 'relative', width: 130, height: 130 }}>
+                                    <CircularProgress percentage={caloriePercentage} size={130} strokeWidth={12} colors={colors} />
+                                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
+                                        <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#22c55e' }}>
+                                            {formatCalories(caloriesIn)}
                                         </Text>
-                                        <Text style={{ color: colors.mutedForeground, fontSize: 13, marginTop: 4 }}>
-                                            {group.total_duration} min • {group.total_calories} cal
-                                            {group.total_steps > 0 && ` • ${group.total_steps.toLocaleString()} steps`}
-                                        </Text>
-                                    </View>
-                                    <View style={{ backgroundColor: colors.primary + '20', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
-                                        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>Details</Text>
+                                        <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Consumed</Text>
                                     </View>
                                 </View>
-                            </TouchableOpacity>
-                        ))}
 
-                        {/* Completed Tasks (Today) */}
-                        {completedCount > 0 && (
-                            <>
-                                <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 8, marginBottom: 8, fontWeight: '500' }}>
-                                    ✓ COMPLETED TODAY
-                                </Text>
-                                {tasks.filter(t => t.status === 'completed').map((task) => (
-                                    <View
-                                        key={`completed-${task.id}`}
-                                        style={{
-                                            backgroundColor: colors.secondary,
-                                            borderRadius: 16,
-                                            padding: 16,
-                                            marginBottom: 8,
-                                            opacity: 0.6,
-                                        }}
-                                    >
-                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                            <CheckCircle size={20} color={colors.primary} style={{ marginRight: 8 }} />
-                                            <View style={{ flex: 1 }}>
-                                                <Text style={{ color: colors.foreground, fontWeight: '600', fontSize: 15, textDecorationLine: 'line-through' }}>
-                                                    {task.name}
-                                                </Text>
-                                                <Text style={{ color: colors.mutedForeground, fontSize: 13, marginTop: 4 }}>
-                                                    {task.duration_minutes} min • {task.calories_to_burn} cal burned
-                                                </Text>
-                                            </View>
-                                        </View>
+                                {/* Burned & Over stats */}
+                                <View style={{ flexDirection: 'row', marginTop: 12, gap: 16 }}>
+                                    <View style={{ alignItems: 'center' }}>
+                                        <Text style={{ color: colors.foreground, fontWeight: '600', fontSize: 16 }}>{formatCalories(caloriesOut)}</Text>
+                                        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Burned</Text>
                                     </View>
-                                ))}
-                            </>
-                        )}
+                                    <View style={{ alignItems: 'center' }}>
+                                        <Text style={{ color: overCalories > 0 ? '#f59e0b' : colors.foreground, fontWeight: '600', fontSize: 16 }}>
+                                            +{formatCalories(overCalories)}
+                                        </Text>
+                                        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Over</Text>
+                                    </View>
+                                </View>
+                            </View>
+
+                            {/* Weekly Chart */}
+                            <WeeklyBarChart data={weeklyData} colors={colors} />
+                        </View>
+
+                        {/* View Weekly Review Button */}
+                        <TouchableOpacity
+                            style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor: '#22c55e',
+                                borderRadius: 12,
+                                paddingVertical: 12,
+                                marginTop: 16,
+                            }}
+                        >
+                            <Eye size={18} color="#fff" />
+                            <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14, marginLeft: 8 }}>View Weekly Review</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                {/* Today's Activity & Tasks */}
+                {groupedTasks.length > 0 && (
+                    <View style={{ marginTop: 20 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 12 }}>
+                            <Zap size={18} color={colors.primary} />
+                            <Text style={{ color: colors.foreground, fontWeight: '600', fontSize: 16, marginLeft: 8, flex: 1 }}>
+                                Today's Activity & Tasks
+                            </Text>
+                            <ChevronRight size={20} color={colors.mutedForeground} />
+                        </View>
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={{ paddingHorizontal: 16 }}
+                        >
+                            {groupedTasks.map((group, index) => (
+                                <TaskCard
+                                    key={`task-${group.name}-${index}`}
+                                    task={group}
+                                    onPress={() => setSelectedGroup(group)}
+                                    colors={colors}
+                                />
+                            ))}
+                        </ScrollView>
                     </View>
                 )}
 
-                {/* Quick Actions */}
-                <TouchableOpacity onPress={() => router.push('/(tabs)/meals')} style={{ marginTop: 16, borderRadius: 16, overflow: 'hidden' }}>
-                    <LinearGradient
-                        colors={[colors.gradientStart, colors.gradientEnd]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={{ paddingVertical: 16, paddingHorizontal: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
-                    >
-                        <Text style={{ color: '#ffffff', fontWeight: '600', fontSize: 18 }}>
-                            📸 Log a Meal
+                {/* Completed Today */}
+                {completedTasks.length > 0 && (
+                    <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+                        <Text style={{ color: colors.foreground, fontWeight: '600', fontSize: 16, marginBottom: 12 }}>
+                            Completed Today
                         </Text>
-                    </LinearGradient>
-                </TouchableOpacity>
+                        {completedTasks.map((task) => (
+                            <View
+                                key={`completed-${task.id}`}
+                                style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    backgroundColor: colors.secondary,
+                                    borderRadius: 12,
+                                    padding: 12,
+                                    marginBottom: 8,
+                                }}
+                            >
+                                <CheckCircle size={20} color={colors.primary} style={{ marginRight: 10 }} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ color: colors.foreground, fontWeight: '500', fontSize: 14 }}>
+                                        {task.name}
+                                    </Text>
+                                    <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>
+                                        {task.calories_to_burn} cal · {task.duration_minutes} min
+                                    </Text>
+                                </View>
+                            </View>
+                        ))}
+                    </View>
+                )}
+
+                {/* Macros & Hydration */}
+                <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+                    <Text style={{ color: colors.foreground, fontWeight: '600', fontSize: 16, marginBottom: 12 }}>
+                        Macros & Hydration
+                    </Text>
+                    <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+                        <ProgressBar
+                            label="Protein"
+                            value={dailyLog?.protein || 0}
+                            max={macroTargets.protein}
+                            color="#8b5cf6"
+                            colors={colors}
+                        />
+                        <ProgressBar
+                            label="Carbs"
+                            value={dailyLog?.carbs || 0}
+                            max={macroTargets.carbs}
+                            color="#22c55e"
+                            colors={colors}
+                        />
+                    </View>
+                    <View style={{ flexDirection: 'row' }}>
+                        <ProgressBar
+                            label="Fat"
+                            value={dailyLog?.fat || 0}
+                            max={macroTargets.fat}
+                            color="#f59e0b"
+                            colors={colors}
+                        />
+                        <ProgressBar
+                            label="Water"
+                            value={Math.round(waterMl / 1000 * 10) / 10}
+                            max={waterTarget / 1000}
+                            color="#3b82f6"
+                            unit="L"
+                            colors={colors}
+                        />
+                    </View>
+                </View>
+
+                {/* Log Meal Button */}
+                <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+                    <TouchableOpacity onPress={() => router.push('/(tabs)/meals')} style={{ borderRadius: 16, overflow: 'hidden' }}>
+                        <LinearGradient
+                            colors={['#22c55e', '#16a34a']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={{ paddingVertical: 16, alignItems: 'center' }}
+                        >
+                            <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>📸 Log a Meal</Text>
+                        </LinearGradient>
+                    </TouchableOpacity>
+                </View>
             </ScrollView>
 
-            {/* Task Detail Modal */}
+            {/* Task Detail Modal - keeping existing functionality */}
             <Modal visible={!!selectedGroup} animationType="slide" transparent>
                 <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
                     <View style={{ backgroundColor: colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%' }}>
@@ -421,86 +506,58 @@ export default function DashboardScreen() {
                             </TouchableOpacity>
                         </View>
                         <ScrollView style={{ padding: 16 }} contentContainerStyle={{ paddingBottom: 40 }}>
-                            {/* Combined Stats */}
-                            <LinearGradient
-                                colors={[colors.gradientStart, colors.gradientEnd]}
-                                style={{ borderRadius: 16, padding: 16, marginBottom: 16 }}
-                            >
-                                <Text style={{ color: '#fff', fontSize: 32, fontWeight: 'bold' }}>
-                                    {selectedGroup?.total_calories} cal
-                                </Text>
+                            <LinearGradient colors={['#22c55e', '#16a34a']} style={{ borderRadius: 16, padding: 16, marginBottom: 16 }}>
+                                <Text style={{ color: '#fff', fontSize: 32, fontWeight: 'bold' }}>{selectedGroup?.total_calories} cal</Text>
                                 <Text style={{ color: 'rgba(255,255,255,0.8)' }}>
                                     {selectedGroup?.total_duration} minutes total
-                                    {selectedGroup && selectedGroup.total_steps > 0 && ` • ${selectedGroup.total_steps.toLocaleString()} steps`}
+                                    {selectedGroup && selectedGroup.total_steps > 0 && ` · ${selectedGroup.total_steps.toLocaleString()} steps`}
                                 </Text>
                             </LinearGradient>
 
-                            {/* Individual Tasks */}
                             <Text style={{ color: colors.foreground, fontWeight: '600', marginBottom: 12 }}>
                                 {selectedGroup && selectedGroup.tasks.length > 1 ? 'Individual Tasks:' : 'Task Details:'}
                             </Text>
                             {selectedGroup?.tasks.map((task) => (
-                                <View
-                                    key={task.id}
-                                    style={{
-                                        backgroundColor: colors.secondary,
-                                        borderRadius: 12,
-                                        padding: 12,
-                                        marginBottom: 12,
-                                    }}
-                                >
+                                <View key={task.id} style={{ backgroundColor: colors.secondary, borderRadius: 12, padding: 12, marginBottom: 12 }}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: task.description ? 8 : 0 }}>
                                         <View style={{ flex: 1 }}>
-                                            <Text style={{ color: colors.foreground, fontWeight: '600' }}>
-                                                {task.duration_minutes} min • {task.calories_to_burn} cal
-                                            </Text>
+                                            <Text style={{ color: colors.foreground, fontWeight: '600' }}>{task.duration_minutes} min · {task.calories_to_burn} cal</Text>
                                         </View>
                                         <TouchableOpacity
-                                            onPress={() => {
-                                                completeTask(task.id);
-                                                if (selectedGroup.tasks.length === 1) setSelectedGroup(null);
-                                            }}
+                                            onPress={() => { completeTask(task.id); if (selectedGroup.tasks.length === 1) setSelectedGroup(null); }}
                                             style={{ padding: 8 }}
+                                            disabled={taskActionLoading === task.id}
                                         >
-                                            <CheckCircle size={24} color={colors.primary} />
+                                            {taskActionLoading === task.id ? (
+                                                <ActivityIndicator size="small" color={colors.primary} />
+                                            ) : (
+                                                <CheckCircle size={24} color={colors.primary} />
+                                            )}
                                         </TouchableOpacity>
                                         <TouchableOpacity
-                                            onPress={() => {
-                                                deleteTask(task.id);
-                                                if (selectedGroup.tasks.length === 1) setSelectedGroup(null);
-                                            }}
+                                            onPress={() => { deleteTask(task.id); if (selectedGroup.tasks.length === 1) setSelectedGroup(null); }}
                                             style={{ padding: 8 }}
                                         >
                                             <Trash2 size={20} color={colors.destructive} />
                                         </TouchableOpacity>
                                     </View>
                                     {task.description && (
-                                        <Markdown
-                                            style={{
-                                                body: { color: colors.mutedForeground, fontSize: 14, lineHeight: 20 },
-                                                heading1: { color: colors.foreground, fontSize: 18, fontWeight: 'bold', marginTop: 8, marginBottom: 4 },
-                                                heading2: { color: colors.foreground, fontSize: 16, fontWeight: '600', marginTop: 6, marginBottom: 3 },
-                                                strong: { fontWeight: 'bold', color: colors.foreground },
-                                                bullet_list: { marginLeft: 8 },
-                                                ordered_list: { marginLeft: 8 },
-                                                list_item: { marginBottom: 2 },
-                                            }}
-                                        >
-                                            {task.description}
-                                        </Markdown>
+                                        <Markdown style={markdownStyles}>{task.description}</Markdown>
                                     )}
                                 </View>
                             ))}
 
-                            {/* Complete All Button */}
                             {selectedGroup && selectedGroup.tasks.length > 1 && (
                                 <TouchableOpacity
                                     onPress={() => completeAllInGroup(selectedGroup)}
-                                    style={{ backgroundColor: colors.primary, borderRadius: 12, padding: 16, marginTop: 16, alignItems: 'center' }}
+                                    disabled={taskActionLoading === 'all'}
+                                    style={{ backgroundColor: colors.primary, borderRadius: 12, padding: 16, marginTop: 8, alignItems: 'center' }}
                                 >
-                                    <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>
-                                        Complete All {selectedGroup.tasks.length} Tasks
-                                    </Text>
+                                    {taskActionLoading === 'all' ? (
+                                        <ActivityIndicator size="small" color="#fff" />
+                                    ) : (
+                                        <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>Complete All {selectedGroup.tasks.length} Tasks</Text>
+                                    )}
                                 </TouchableOpacity>
                             )}
                         </ScrollView>
