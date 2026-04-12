@@ -16,15 +16,9 @@ app = FastAPI(
 )
 
 # CORS middleware - allow mobile app and local development
-cors_origins = settings.cors_origins_list + [
-    "exp://localhost:8081",
-    "exp://10.0.0.0:8081",  # Expo Go on local network
-    "exp://*",  # Allow all Expo tunnel URLs
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for mobile app
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
