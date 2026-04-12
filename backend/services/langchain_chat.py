@@ -85,30 +85,33 @@ def build_message_history(chat_history: list, system_context: str) -> list:
     return messages
 
 
-async def chat_with_context(
+async def chat_with_context_basic(
     message: str,
     user_profile: dict,
     meals_history: list,
     daily_log: dict,
     chat_history: list
 ) -> str:
-    """Chat with AI using full context and conversation history."""
+    """Basic chat with AI using full context and conversation history.
+    This is the FALLBACK method - no tools, just plain text responses.
+    Guaranteed to work even if the agent/tool system fails."""
     try:
         llm = get_chat_llm()
-        
+
         # Build system context
         system_context = build_system_context(user_profile, meals_history, daily_log)
-        
+
         # Build message history
         messages = build_message_history(chat_history, system_context)
-        
+
         # Add current user message
         messages.append(HumanMessage(content=message))
-        
+
         # Get AI response
         response = await llm.ainvoke(messages)
-        
+
         return response.content
-        
+
     except Exception as e:
         raise Exception(f"Chat failed: {str(e)}")
+

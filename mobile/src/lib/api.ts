@@ -154,6 +154,25 @@ export const chatAPI = {
         const response = await api.delete('/api/chat/history');
         return response.data;
     },
+
+    confirmMeal: async (data: {
+        food_name: string;
+        calories: number;
+        protein?: number;
+        carbs?: number;
+        fat?: number;
+        plate_grade?: string;
+        reasoning?: string;
+        source?: string;
+    }) => {
+        const response = await api.post('/api/chat/confirm-meal', data);
+        return response.data;
+    },
+
+    confirmGoal: async (data: { new_target: number }) => {
+        const response = await api.post('/api/chat/confirm-goal', data);
+        return response.data;
+    },
 };
 
 export const profileAPI = {

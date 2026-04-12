@@ -204,7 +204,7 @@ export default function WeeklyScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [weeklyData, setWeeklyData] = useState<WeeklyData | null>(null);
 
-    const calorieGoal = profile?.calorie_goal || 2000;
+    const calorieGoal = profile?.daily_calorie_target || 2000;
     const weeklyGoal = calorieGoal * 7;
 
     const fetchWeeklyData = async () => {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Animated, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Animated, ScrollView, Dimensions } from 'react-native';
 import {
     Sun, Footprints, AlertCircle, Target, Droplets, Dumbbell, Flame, X
 } from 'lucide-react-native';
@@ -127,6 +127,8 @@ export default function SmartNotifications({
 }) {
     const [dismissed, setDismissed] = useState<string[]>([]);
     const [fadeAnims, setFadeAnims] = useState<Record<string, Animated.Value>>({});
+    const [slideAnims, setSlideAnims] = useState<Record<string, Animated.Value>>({});
+    const SCREEN_WIDTH = Dimensions.get('window').width;
 
     // Load dismissed notifications for this session
     useEffect(() => {
@@ -137,36 +139,52 @@ export default function SmartNotifications({
     }, []);
 
     const dismissNotification = async (id: string) => {
-        // Animate out
-        if (fadeAnims[id]) {
-            Animated.timing(fadeAnims[id], {
-                toValue: 0,
-                duration: 200,
-                useNativeDriver: true,
-            }).start();
+        // Animate out to the left
+        if (fadeAnims[id] && slideAnims[id]) {
+            Animated.parallel([
+                Animated.timing(slideAnims[id], {
+                    toValue: -SCREEN_WIDTH, 
+                    duration: 300,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(fadeAnims[id], {
+                    toValue: 0,
+                    duration: 300,
+                    useNativeDriver: true,
+                })
+            ]).start(async () => {
+                const today = new Date().toISOString().split('T')[0];
+                const newDismissed = [...dismissed, id];
+                setDismissed(newDismissed);
+                await AsyncStorage.setItem(`${DISMISSED_KEY}_${today}`, JSON.stringify(newDismissed));
+            });
+        } else {
+             // Fallback if anim not initialized
+            const today = new Date().toISOString().split('T')[0];
+            const newDismissed = [...dismissed, id];
+            setDismissed(newDismissed);
+            await AsyncStorage.setItem(`${DISMISSED_KEY}_${today}`, JSON.stringify(newDismissed));
         }
-
-        const today = new Date().toISOString().split('T')[0];
-        const newDismissed = [...dismissed, id];
-        setDismissed(newDismissed);
-        await AsyncStorage.setItem(`${DISMISSED_KEY}_${today}`, JSON.stringify(newDismissed));
     };
 
     const notifications = getNotifications(data).filter((n) => !dismissed.includes(n.id));
 
-    // Initialize fade animations for new notifications
+    // Initialize animations for new notifications
     useEffect(() => {
-        const newAnims: Record<string, Animated.Value> = {};
+        const newFadeAnims: Record<string, Animated.Value> = {};
+        const newSlideAnims: Record<string, Animated.Value> = {};
         notifications.forEach((n) => {
             if (!fadeAnims[n.id]) {
-                newAnims[n.id] = new Animated.Value(0);
+                newFadeAnims[n.id] = new Animated.Value(0);
+                newSlideAnims[n.id] = new Animated.Value(0);
             }
         });
-        if (Object.keys(newAnims).length > 0) {
-            setFadeAnims((prev) => ({ ...prev, ...newAnims }));
-            // Fade in
+        if (Object.keys(newFadeAnims).length > 0) {
+            setFadeAnims((prev) => ({ ...prev, ...newFadeAnims }));
+            setSlideAnims((prev) => ({ ...prev, ...newSlideAnims }));
+            // Fade and slide in
             setTimeout(() => {
-                Object.values(newAnims).forEach((anim) => {
+                Object.values(newFadeAnims).forEach((anim) => {
                     Animated.timing(anim, {
                         toValue: 1,
                         duration: 400,
@@ -180,21 +198,31 @@ export default function SmartNotifications({
     if (notifications.length === 0) return null;
 
     return (
-        <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
-            style={{ marginBottom: 8 }}
-        >
-            {notifications.map((notif) => {
+        <View style={{ marginBottom: 16 + (notifications.length * 6), alignItems: 'center', minHeight: 70 }}>
+            {notifications.map((notif, index) => {
                 const Icon = notif.icon;
                 const opacity = fadeAnims[notif.id] || new Animated.Value(1);
+                const translateX = slideAnims[notif.id] || new Animated.Value(0);
 
+                // Z-index stacking: 0 index is at the back, 1 index is at the front based on user request:
+                // "first is below the second one"
+                const isFirst = index === 0;
+                const reverseIndex = notifications.length - 1 - index;
+                const zIndex = index; // index 1 has higher zIndex than index 0
+                
                 return (
                     <Animated.View
                         key={notif.id}
                         style={{
                             opacity,
+                            transform: [
+                                { translateX },
+                                { translateY: reverseIndex * -10 },
+                                { scale: 1 - reverseIndex * 0.05 }
+                            ],
+                            position: reverseIndex === 0 ? 'relative' : 'absolute',
+                            zIndex: zIndex,
+                            top: reverseIndex === 0 ? 0 : reverseIndex * 12,
                             flexDirection: 'row',
                             alignItems: 'center',
                             backgroundColor: colors.secondary,
@@ -202,7 +230,12 @@ export default function SmartNotifications({
                             padding: 12,
                             borderLeftWidth: 3,
                             borderLeftColor: notif.iconColor,
-                            width: 280,
+                            width: SCREEN_WIDTH - 32,
+                            shadowColor: '#000',
+                            shadowOffset: { width: 0, height: 2 },
+                            shadowOpacity: 0.1,
+                            shadowRadius: 4,
+                            elevation: 3,
                         }}
                     >
                         <View
@@ -238,6 +271,6 @@ export default function SmartNotifications({
                     </Animated.View>
                 );
             })}
-        </ScrollView>
+        </View>
     );
 }

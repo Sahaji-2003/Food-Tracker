@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from services.auth import get_user_id
 from services.supabase_client import get_supabase
-from services.langchain_chat import chat_with_context
-from models import ChatRequest, ChatResponse
+from services.agent_service import chat_with_agent
+from models import ChatRequest, ChatResponse, UICard
 from datetime import date, timedelta
 import uuid
 
@@ -14,7 +14,13 @@ async def chat_with_buddy(
     request: ChatRequest,
     user_id: str = Depends(get_user_id)
 ):
-    """Chat with Fit Buddy AI using LangChain with full context."""
+    """Chat with Fit Buddy AI using LangChain agent with tool calling.
+    
+    Returns structured response with:
+    - response: text message (always present)
+    - ui_cards: interactive UI cards (empty for plain text chats)
+    - actions_taken: list of tools that were executed
+    """
     try:
         supabase = get_supabase()
         
@@ -60,19 +66,24 @@ async def chat_with_buddy(
                 .order("created_at", desc=True)\
                 .limit(10)\
                 .execute()
-            # Reverse to get chronological order
             chat_history = list(reversed(history_result.data or []))
         except:
             chat_history = []
         
-        # 5. Get AI response with full context
-        response = await chat_with_context(
+        # 5. Get AI response with agent (tools + structured output)
+        agent_result = await chat_with_agent(
             message=request.message,
+            user_id=user_id,
             user_profile=profile,
             meals_history=meals_history,
             daily_log=daily_log,
-            chat_history=chat_history
+            chat_history=chat_history,
+            supabase=supabase
         )
+        
+        response_text = agent_result.get("response", "")
+        ui_cards_data = agent_result.get("ui_cards", [])
+        actions_taken = agent_result.get("actions_taken", [])
         
         # 6. Save user message to DB
         supabase.table("chat_messages").insert({
@@ -81,11 +92,11 @@ async def chat_with_buddy(
             "content": request.message
         }).execute()
         
-        # 7. Save AI response to DB
+        # 7. Save AI response to DB (text only, not the full JSON with cards)
         supabase.table("chat_messages").insert({
             "user_id": user_id,
             "role": "assistant",
-            "content": response
+            "content": response_text
         }).execute()
         
         # 8. Cleanup old messages (keep only 20)
@@ -105,9 +116,23 @@ async def chat_with_buddy(
         
         session_id = request.session_id or str(uuid.uuid4())
         
+        # Convert ui_cards dicts to UICard models
+        ui_cards = []
+        for card_data in ui_cards_data:
+            try:
+                ui_cards.append(UICard(
+                    card_type=card_data.get("card_type", "unknown"),
+                    data=card_data.get("data", {}),
+                    actions=card_data.get("actions", [])
+                ))
+            except:
+                pass  # Skip malformed cards
+        
         return ChatResponse(
-            response=response,
-            session_id=session_id
+            response=response_text,
+            session_id=session_id,
+            ui_cards=ui_cards,
+            actions_taken=actions_taken
         )
         
     except Exception as e:

@@ -715,26 +715,35 @@ const CircularProgress = ({
                         {/* BMR vs Exercise mini-breakdown */}
                         <View style={{
                             width: '100%',
-                            backgroundColor: colors.muted,
-                            borderRadius: 12,
-                            padding: 10,
-                            marginBottom: 16,
-                            marginLeft: 52,
+                            backgroundColor: colors.secondary,
+                            borderRadius: 16,
+                            paddingVertical: 14,
+                            paddingHorizontal: 12,
+                            marginBottom: 24,
                             flexDirection: 'row',
-                            gap: 16,
+                            alignItems: 'center',
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            shadowColor: '#000',
+                            shadowOffset: { width: 0, height: 2 },
+                            shadowOpacity: 0.05,
+                            shadowRadius: 3,
+                            elevation: 2,
                         }}>
                             <View style={{ alignItems: 'center', flex: 1 }}>
-                                <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>🏠 Resting</Text>
-                                <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: '600' }}>
-                                    {formatCalories(restingCal)} Cal
+                                <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 4 }}>🏠 Resting (BMR)</Text>
+                                <Text style={{ color: colors.foreground, fontSize: 16, fontWeight: 'bold' }}>
+                                    {formatCalories(restingCal)} <Text style={{ fontSize: 12, fontWeight: '500' }}>Cal</Text>
                                 </Text>
-                                <Text style={{ color: colors.mutedForeground, fontSize: 9 }}>breathing, digestion</Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 10, marginTop: 2 }}>breathing, digestion</Text>
                             </View>
-                            <View style={{ width: 1, backgroundColor: colors.border }} />
+                            <View style={{ width: 1, height: '80%', backgroundColor: colors.border, marginHorizontal: 8 }} />
                             <View style={{ alignItems: 'center', flex: 1 }}>
-                                <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>🏃 Exercise</Text>
-                                <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: '600' }}>{formatCalories(exerciseCal)} Cal</Text>
-                                <Text style={{ color: colors.mutedForeground, fontSize: 9 }}>walking, workouts</Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 11, marginBottom: 4 }}>🏃 Active Exercise</Text>
+                                <Text style={{ color: colors.foreground, fontSize: 16, fontWeight: 'bold' }}>
+                                    {formatCalories(exerciseCal)} <Text style={{ fontSize: 12, fontWeight: '500' }}>Cal</Text>
+                                </Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 10, marginTop: 2 }}>walking, workouts</Text>
                             </View>
                         </View>
 

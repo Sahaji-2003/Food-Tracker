@@ -9,11 +9,19 @@ import LottieView from 'lottie-react-native';
 import { useThemeStore } from '@/store/useThemeStore';
 import { chatAPI } from '@/lib/api';
 import { useAlert } from '@/components/ui';
+import { CardRenderer } from '@/components/chat/ChatCards';
+
+interface UICard {
+    card_type: string;
+    data: Record<string, any>;
+    actions: { label: string; action: string; payload?: any }[];
+}
 
 interface Message {
     id: string;
     role: 'user' | 'assistant';
     content: string;
+    ui_cards?: UICard[];
     imageUri?: string;
     created_at?: string;
 }
@@ -91,6 +99,7 @@ export default function ChatScreen() {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
                 content: data.response,
+                ui_cards: data.ui_cards || [],
             };
             setMessages(prev => [...prev, aiMessage]);
         } catch (error) {
@@ -226,64 +235,81 @@ export default function ChatScreen() {
                         messages.map((message) => (
                             <View
                                 key={message.id}
-                                style={{
-                                    flexDirection: 'row',
-                                    marginBottom: 16,
-                                    alignItems: 'flex-start',
-                                    justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start',
-                                }}
+                                style={{ marginBottom: 16 }}
                             >
-                                {message.role === 'assistant' && (
-                                    <View style={{
-                                        width: 32,
-                                        height: 32,
-                                        borderRadius: 16,
-                                        backgroundColor: colors.primary + '20',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        marginRight: 8,
-                                    }}>
-                                        <Bot size={18} color={colors.primary} />
-                                    </View>
-                                )}
+                                {/* Message row: avatar + bubble (ALWAYS shown) */}
                                 <View
                                     style={{
-                                        maxWidth: '75%',
-                                        backgroundColor: message.role === 'user' ? colors.primary : colors.secondary,
-                                        borderRadius: 16,
-                                        borderTopLeftRadius: message.role === 'assistant' ? 4 : 16,
-                                        borderTopRightRadius: message.role === 'user' ? 4 : 16,
-                                        padding: 12,
+                                        flexDirection: 'row',
+                                        alignItems: 'flex-start',
+                                        justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start',
                                     }}
                                 >
-                                    {message.imageUri && (
-                                        <Image
-                                            source={{ uri: message.imageUri }}
-                                            style={{ width: 150, height: 150, borderRadius: 8, marginBottom: 8 }}
-                                            resizeMode="cover"
-                                        />
+                                    {message.role === 'assistant' && (
+                                        <View style={{
+                                            width: 32,
+                                            height: 32,
+                                            borderRadius: 16,
+                                            backgroundColor: colors.primary + '20',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            marginRight: 8,
+                                        }}>
+                                            <Bot size={18} color={colors.primary} />
+                                        </View>
                                     )}
-                                    {message.role === 'assistant' ? (
-                                        <Markdown style={markdownStyles}>
-                                            {message.content}
-                                        </Markdown>
-                                    ) : (
-                                        <Text style={{ color: '#ffffff', fontSize: 15, lineHeight: 22 }}>
-                                            {message.content}
-                                        </Text>
+                                    <View
+                                        style={{
+                                            maxWidth: '75%',
+                                            backgroundColor: message.role === 'user' ? colors.primary : colors.secondary,
+                                            borderRadius: 16,
+                                            borderTopLeftRadius: message.role === 'assistant' ? 4 : 16,
+                                            borderTopRightRadius: message.role === 'user' ? 4 : 16,
+                                            padding: 12,
+                                        }}
+                                    >
+                                        {message.imageUri && (
+                                            <Image
+                                                source={{ uri: message.imageUri }}
+                                                style={{ width: 150, height: 150, borderRadius: 8, marginBottom: 8 }}
+                                                resizeMode="cover"
+                                            />
+                                        )}
+                                        {message.role === 'assistant' ? (
+                                            <Markdown style={markdownStyles}>
+                                                {message.content}
+                                            </Markdown>
+                                        ) : (
+                                            <Text style={{ color: '#ffffff', fontSize: 15, lineHeight: 22 }}>
+                                                {message.content}
+                                            </Text>
+                                        )}
+                                    </View>
+                                    {message.role === 'user' && (
+                                        <View style={{
+                                            width: 32,
+                                            height: 32,
+                                            borderRadius: 16,
+                                            backgroundColor: colors.primary,
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            marginLeft: 8,
+                                        }}>
+                                            <User size={18} color="#ffffff" />
+                                        </View>
                                     )}
                                 </View>
-                                {message.role === 'user' && (
-                                    <View style={{
-                                        width: 32,
-                                        height: 32,
-                                        borderRadius: 16,
-                                        backgroundColor: colors.primary,
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        marginLeft: 8,
-                                    }}>
-                                        <User size={18} color="#ffffff" />
+
+                                {/* Compact card previews BELOW the text bubble */}
+                                {message.role === 'assistant' && message.ui_cards && message.ui_cards.length > 0 && (
+                                    <View style={{ marginLeft: 40, marginTop: 8, marginRight: 16 }}>
+                                        {message.ui_cards.map((card, cardIndex) => (
+                                            <CardRenderer
+                                                key={`${message.id}-card-${cardIndex}`}
+                                                card={card}
+                                                onActionComplete={() => scrollToEnd()}
+                                            />
+                                        ))}
                                     </View>
                                 )}
                             </View>

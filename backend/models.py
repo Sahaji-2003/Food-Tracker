@@ -67,9 +67,17 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = None
 
 
+class UICard(BaseModel):
+    card_type: str  # meal_log_card, water_card, daily_summary_card, recipe_card, goal_update_card, meal_suggestions_card
+    data: dict
+    actions: List[dict] = []
+
+
 class ChatResponse(BaseModel):
-    response: str
+    response: str  # Text message (always present for backward compatibility)
     session_id: str
+    ui_cards: List[UICard] = []  # Interactive cards (empty for plain text chats)
+    actions_taken: List[str] = []  # Tools that were auto-executed
 
 
 # Profile Models
