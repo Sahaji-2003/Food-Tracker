@@ -255,7 +255,7 @@ export default function ChatScreen() {
                                             justifyContent: 'center',
                                             marginRight: 8,
                                         }}>
-                                            <Bot size={18} color={colors.primary} />
+                                            <Sparkles size={18} color={colors.primary} />
                                         </View>
                                     )}
                                     <View
@@ -326,7 +326,7 @@ export default function ChatScreen() {
                                 justifyContent: 'center',
                                 marginRight: 8,
                             }}>
-                                <Bot size={18} color={colors.primary} />
+                                <Sparkles size={18} color={colors.primary} />
                             </View>
                             <View style={{
                                 backgroundColor: colors.secondary,

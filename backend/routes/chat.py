@@ -92,14 +92,20 @@ async def chat_with_buddy(
             "content": request.message
         }).execute()
         
-        # 7. Save AI response to DB (text only, not the full JSON with cards)
+        # 7. Save AI response to DB (inject ui_cards inside content JSON blob if present)
+        import json
+        if ui_cards_data:
+            ai_content = json.dumps({"text": response_text, "ui_cards": ui_cards_data})
+        else:
+            ai_content = response_text
+
         supabase.table("chat_messages").insert({
             "user_id": user_id,
             "role": "assistant",
-            "content": response_text
+            "content": ai_content
         }).execute()
         
-        # 8. Cleanup old messages (keep only 20)
+        # 8. Cleanup old messages (keep only 50 max)
         try:
             all_msgs = supabase.table("chat_messages")\
                 .select("id")\
@@ -107,8 +113,8 @@ async def chat_with_buddy(
                 .order("created_at", desc=True)\
                 .execute()
             
-            if len(all_msgs.data or []) > 20:
-                old_ids = [m["id"] for m in all_msgs.data[20:]]
+            if len(all_msgs.data or []) > 50:
+                old_ids = [m["id"] for m in all_msgs.data[50:]]
                 for old_id in old_ids:
                     supabase.table("chat_messages").delete().eq("id", old_id).execute()
         except:
@@ -125,7 +131,8 @@ async def chat_with_buddy(
                     data=card_data.get("data", {}),
                     actions=card_data.get("actions", [])
                 ))
-            except:
+            except Exception as parse_err:
+                print(f"[ERROR] Failed to parse UI card: {parse_err}")
                 pass  # Skip malformed cards
         
         return ChatResponse(
@@ -160,6 +167,18 @@ async def get_chat_history(
         
         # Return in chronological order
         messages = list(reversed(result.data or []))
+        
+        import json
+        for msg in messages:
+            if msg["role"] == "assistant":
+                try:
+                    payload = json.loads(msg["content"])
+                    if isinstance(payload, dict) and "text" in payload:
+                        msg["content"] = payload.get("text", "")
+                        msg["ui_cards"] = payload.get("ui_cards", [])
+                except:
+                    pass
+                    
         return {"messages": messages}
         
     except Exception as e:

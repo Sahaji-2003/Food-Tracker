@@ -14,11 +14,12 @@ import {
 import Markdown from 'react-native-markdown-display';
 import {
     Utensils, Droplets, Target, ChefHat, TrendingUp, Flame,
-    CheckCircle, X, Zap, Footprints, Eye,
+    CheckCircle, X, Zap, Footprints, Eye, Sparkles
 } from 'lucide-react-native';
 import { useThemeStore } from '@/store/useThemeStore';
 import { chatAPI } from '@/lib/api';
 import { CircularProgress, BarChart, MacroBreakdown } from './Charts';
+import { DynamicUIRenderer } from './DynamicUI';
 
 // ===== Types =====
 interface UICard {
@@ -738,6 +739,28 @@ export function MealSuggestionsCard({ card }: CardProps) {
                         </View>
                     ))}
                 </View>
+
+                {data.suggestions && data.suggestions.length > 0 && (
+                    <View style={{ marginTop: 8, marginBottom: 16 }}>
+                        <Text style={{ color: colors.foreground, fontWeight: 'bold', fontSize: 16, marginBottom: 12 }}>✨ Top Choices</Text>
+                        {data.suggestions.map((suggestion: any, index: number) => (
+                            <View key={index} style={{ backgroundColor: colors.muted, borderRadius: 12, padding: 14, marginBottom: 10 }}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                                    <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: 'bold', flex: 1, marginRight: 8 }}>
+                                        {suggestion.name}
+                                    </Text>
+                                    <Text style={{ color: '#22c55e', fontSize: 13, fontWeight: 'bold' }}>
+                                        🔥 {suggestion.calories} Cal
+                                    </Text>
+                                </View>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 13, lineHeight: 18 }}>
+                                    {suggestion.reason}
+                                </Text>
+                            </View>
+                        ))}
+                    </View>
+                )}
+
                 {data.allergies?.length > 0 && (
                     <View style={{ backgroundColor: colors.muted, borderRadius: 12, padding: 12 }}>
                         <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Avoiding: {data.allergies.join(', ')}</Text>
@@ -748,6 +771,36 @@ export function MealSuggestionsCard({ card }: CardProps) {
     );
 }
 
+
+// ═══════════════════════════════════════
+//  DYNAMIC UI CARD (Generative UI)
+// ═══════════════════════════════════════
+export function DynamicUICard({ card }: CardProps) {
+    const [modalVisible, setModalVisible] = useState(false);
+    const data = card.data;
+    const title = data.title || "✨ Custom Dynamic UI";
+
+    return (
+        <>
+            <CompactCard
+                accentColor="#ec4899"
+                icon={Zap}
+                title={title}
+                description="Tap to view generated interactive UI"
+                onPress={() => setModalVisible(true)}
+            />
+            <CardModal visible={modalVisible} onClose={() => setModalVisible(false)}
+                accentColor="#ec4899" icon={Zap} title={title}
+            >
+                {data.layout ? (
+                    <DynamicUIRenderer layout={data.layout} />
+                ) : (
+                    <Text style={{ color: "red" }}>Warning: Invalid layout data from AI</Text>
+                )}
+            </CardModal>
+        </>
+    );
+}
 
 // ═══════════════════════════════════════
 //  CARD RENDERER
@@ -766,6 +819,8 @@ export function CardRenderer({ card, onActionComplete }: CardProps) {
             return <GoalUpdateCard card={card} onActionComplete={onActionComplete} />;
         case 'meal_suggestions_card':
             return <MealSuggestionsCard card={card} />;
+        case 'dynamic_ui_card':
+            return <DynamicUICard card={card} />;
         case 'error':
         default:
             return null;

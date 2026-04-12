@@ -1,5 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
+
+# Suppress noisy LangChain schema warnings
+logging.getLogger("langchain_google_genai").setLevel(logging.ERROR)
+
 from config import settings
 from routes import profile, daily, meals, suggestions, chat, google_fit, weekly
 from routes import chat_actions

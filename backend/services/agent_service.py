@@ -93,10 +93,12 @@ You have access to tools that can take real actions. Use them when appropriate:
 4. **generate_recipe** — When user wants cooking ideas. Examples: "what can I cook with chicken?", "suggest a recipe", "I have rice and dal"
 5. **set_calorie_goal** — When user wants to change their target. Examples: "change my goal to 1800", "I want to eat 2200 calories"
 6. **get_meal_suggestions** — When user asks what to eat. Examples: "what should I eat?", "I'm hungry", "suggest dinner"
+7. **generate_custom_ui** — When user wants to see structured, non-standard information (e.g. workout routines, comparison tables, step-by-step guides) that would look better in a native UI layout rather than plain text. Always invent beautiful layouts using Headings, Badges, ValueProps, and Dividers!
 
 ## Critical Rules
 1. **When user describes eating food → ALWAYS call log_meal.** Never manually estimate calories in text.
 2. **When user asks about progress → call get_daily_summary.** Don't make up numbers.
+3. When asked for structured plans/guides/comparisons, use **generate_custom_ui** to build a rich user interface!
 3. When a tool returns data, incorporate it naturally into your response.
 4. When NO tool is needed (general health questions, motivation, etc.), respond with helpful text using markdown formatting.
 5. Keep responses concise — 2-3 sentences when a tool/card is present, 2-4 paragraphs for text-only answers.
@@ -218,18 +220,19 @@ async def chat_with_agent(
             ui_cards = extract_ui_cards_from_tool_results(tool_results)
 
             # === Second LLM call with tool results ===
-            # Add the AI's tool-call message and the tool results to the conversation
-            messages.append(response)  # AI message with tool_calls
-
-            for i, tool_call in enumerate(response.tool_calls):
-                tool_msg = ToolMessage(
-                    content=tool_results[i] if i < len(tool_results) else "{}",
-                    tool_call_id=tool_call["id"]
-                )
-                messages.append(tool_msg)
-
-            # Get final response after tools executed
-            final_response = await llm_with_tools.ainvoke(messages)
+            # WORKAROUND: Gemini thinking models currently crash with "missing thought_signature" 
+            # if we pass raw ToolMessages back in multi-turn. We bypass this by having the raw LLM summarize the results.
+            
+            synthesis_prompt = "You just executed tools to fetch/update data. The UI has automatically displayed cards with this data to the user.\n"
+            synthesis_prompt += "Here is the raw data that was returned:\n\n"
+            for res in tool_results:
+                synthesis_prompt += f"{res}\n"
+            synthesis_prompt += "\nPlease write a very brief, friendly 1-2 sentence response confirming this. Do not list out all the data numbers since the user can see the UI card. Be conversational."
+            
+            messages.append(HumanMessage(content=synthesis_prompt))
+            
+            # Use base LLM (no tools bound) to prevent infinite tool loops and schema crashes
+            final_response = await llm.ainvoke(messages)
             response_text = final_response.content
 
         else:
@@ -266,7 +269,7 @@ async def chat_with_agent(
         except Exception as fallback_error:
             print(f"[AGENT ERROR] Fallback also failed: {str(fallback_error)}")
             return {
-                "response": "I'm having trouble right now. Please try again in a moment! 🙏",
+                "response": f"I'm having trouble right now. Agent error: {str(e)[:100]}. Fallback error: {str(fallback_error)[:100]}",
                 "ui_cards": [],
                 "actions_taken": []
             }

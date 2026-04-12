@@ -20,27 +20,40 @@ from pydantic import BaseModel, Field
 # --- Tool Input Schemas ---
 
 class LogMealInput(BaseModel):
-    food_description: str = Field(description="What the user ate, e.g. '2 chapatis with dal and sabzi'")
+    food_description: str = Field(description="What the user ate, e.g. '2 chapatis'")
+    calories: int = Field(default=0, description="Estimated calories for the meal")
+    protein: int = Field(default=0, description="Estimated protein in grams")
+    carbs: int = Field(default=0, description="Estimated carbs in grams")
+    fat: int = Field(default=0, description="Estimated fat in grams")
+    plate_grade: str = Field(default="B", description="Grade from A to F evaluating meal healthiness")
+    reasoning: str = Field(default="", description="Short 1 sentence explanation of why this grade was given")
 
 class LogWaterInput(BaseModel):
     amount_ml: int = Field(description="Amount of water in milliliters. 1 glass = 250ml, 1 bottle = 500ml, 1 litre = 1000ml")
-
 class GetDailySummaryInput(BaseModel):
     pass  # No input needed
 
 class GenerateRecipeInput(BaseModel):
-    ingredients: str = Field(description="Available ingredients, comma-separated")
-    max_calories: Optional[int] = Field(default=None, description="Maximum calories for the recipe")
-    cuisine_preference: Optional[str] = Field(default=None, description="Preferred cuisine type")
+    recipe_name: str = Field(description="Name of the recipe generated")
+    ingredients_list: str = Field(description="A comma-separated list of required ingredients")
+    instructions: str = Field(description="Step-by-step markdown formatted instructions on how to cook it")
+    cook_time: int = Field(default=0, description="Estimated total cook time in minutes")
+    calories: int = Field(default=0, description="Estimated total calories")
+    cuisine_preference: str = Field(default="", description="Preferred cuisine type")
 
 class SetCalorieGoalInput(BaseModel):
     new_target: int = Field(description="The new daily calorie target in kcal")
-    reason: Optional[str] = Field(default=None, description="Reason for the change")
+    reason: str = Field(default="", description="Reason for the change (empty string if none)")
 
 class GetMealSuggestionsInput(BaseModel):
-    meal_type: Optional[str] = Field(default=None, description="Type of meal: breakfast, lunch, dinner, snack")
-    max_calories: Optional[int] = Field(default=None, description="Maximum calories for the suggestion")
+    meal_type: str = Field(default="Any", description="Type of meal: breakfast, lunch, dinner, snack")
+    max_calories: int = Field(default=0, description="Maximum calories for the suggestion")
+    suggestions_json: str = Field(description="A JSON string containing a list of 3 generated meal suggestions. Format: [{'name':'Apple', 'calories':95, 'reason':'High fiber'}]")
 
+
+class GenerateCustomUIInput(BaseModel):
+    title: str = Field(description="A short, catchy title for the card (e.g. 'Your Custom Workout', 'Comparison')")
+    layout_json: str = Field(description="A JSON string representing the custom UI layout. Allowed types: Heading, Text, Row, Badge, Divider, ValueProp. Example: {'layout': [{'type':'Heading', 'text':'Workout'}]}")
 
 def create_tools(user_id: str, supabase, gemini_analyze_fn=None):
     """
@@ -49,66 +62,25 @@ def create_tools(user_id: str, supabase, gemini_analyze_fn=None):
     """
 
     @tool(args_schema=LogMealInput)
-    def log_meal(food_description: str) -> str:
+    def log_meal(food_description: str, calories: int = 0, protein: int = 0, carbs: int = 0, fat: int = 0, plate_grade: str = "B", reasoning: str = "") -> str:
         """Analyze a meal from text description and return calorie/macro breakdown.
         Use this when the user tells you what they ate or are eating.
+        Provide your best estimation for the nutritional values.
         This returns a preview card — the meal is NOT saved until the user confirms."""
         try:
-            # Get user profile for personalized analysis
-            profile_result = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
-            profile = profile_result.data or {}
-
-            # Get today's calorie consumption
-            target_date = date.today().isoformat()
-            try:
-                daily_result = supabase.table("daily_logs") \
-                    .select("*").eq("user_id", user_id).eq("date", target_date).single().execute()
-                calories_consumed = daily_result.data.get("calories_in", 0) if daily_result.data else 0
-            except:
-                calories_consumed = 0
-
-            calorie_target = profile.get("daily_calorie_target", 2000)
-            gender = profile.get("gender", "unknown")
-            weight = profile.get("weight", 70)
-            age = profile.get("age", 25)
-            height = profile.get("height", 170)
-            preferred_tasks = profile.get("preferred_tasks", ["walking"])
-
-            # Use Gemini to analyze the food
-            if gemini_analyze_fn:
-                import asyncio
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
-                            analysis = loop.run_in_executor(pool, lambda: asyncio.run(
-                                gemini_analyze_fn(food_description, profile, calories_consumed)
-                            ))
-                            # This won't work cleanly in nested async, use simpler estimation
-                            raise Exception("Use estimation")
-                    else:
-                        analysis = asyncio.run(gemini_analyze_fn(food_description, profile, calories_consumed))
-                except:
-                    # Fallback: Return a structured estimation request
-                    # The agent will use its own knowledge to estimate
-                    analysis = None
-
-            # Let the LLM itself estimate if Gemini call is complex
-            # Return instruction for the agent to estimate
+            # Let the LLM estimation be cleanly bundled in the data 
             result = {
                 "card_type": "meal_log_card",
                 "data": {
                     "food_description": food_description,
-                    "needs_estimation": True,
-                    "user_context": {
-                        "calorie_target": calorie_target,
-                        "calories_consumed_today": calories_consumed,
-                        "gender": gender,
-                        "weight": weight,
-                        "age": age,
-                        "height": height,
-                    }
+                    "food_name": food_description,
+                    "calories": calories,
+                    "protein": protein,
+                    "carbs": carbs,
+                    "fat": fat,
+                    "plate_grade": plate_grade,
+                    "reasoning": reasoning,
+                    "needs_estimation": False
                 },
                 "actions": [
                     {"label": "✔️ Confirm & Log", "action": "confirm_meal"},
@@ -291,41 +263,21 @@ def create_tools(user_id: str, supabase, gemini_analyze_fn=None):
             return json.dumps({"card_type": "error", "data": {"message": f"Failed to get summary: {str(e)}"}})
 
     @tool(args_schema=GenerateRecipeInput)
-    def generate_recipe(ingredients: str, max_calories: Optional[int] = None, cuisine_preference: Optional[str] = None) -> str:
-        """Generate a healthy recipe based on available ingredients and calorie budget.
-        Use this when user asks for recipe ideas, 'what can I cook?', 'suggest a meal with X', etc."""
+    def generate_recipe(recipe_name: str, ingredients_list: str, instructions: str, cook_time: int = 0, calories: int = 0, cuisine_preference: str = "") -> str:
+        """Generate a healthy recipe based on user request.
+        Use this when user asks for recipe ideas, 'what can I cook?', 'suggest a meal with X', etc.
+        Output Step by Step instructions."""
         try:
-            # Get user profile for dietary restrictions
-            try:
-                profile_result = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
-                profile = profile_result.data or {}
-            except:
-                profile = {}
-
-            # Get remaining calories if max_calories not specified
-            if not max_calories:
-                target_date = date.today().isoformat()
-                try:
-                    daily_result = supabase.table("daily_logs") \
-                        .select("*").eq("user_id", user_id).eq("date", target_date).single().execute()
-                    daily_log = daily_result.data or {}
-                    calorie_target = profile.get("daily_calorie_target", 2000)
-                    calories_in = daily_log.get("calories_in", 0)
-                    calories_out = daily_log.get("calories_out", 0)
-                    max_calories = max(calorie_target - (calories_in - calories_out), 300)
-                except:
-                    max_calories = 500
-
             result = {
                 "card_type": "recipe_card",
                 "data": {
-                    "needs_generation": True,
-                    "ingredients": ingredients,
-                    "max_calories": max_calories,
+                    "name": recipe_name,
+                    "ingredients": [i.strip() for i in ingredients_list.split(',')],
+                    "instructions": instructions,
+                    "cook_time": cook_time,
+                    "calories": calories,
                     "cuisine_preference": cuisine_preference,
-                    "allergies": profile.get("allergies", []),
-                    "preferences": profile.get("preferences", []),
-                    "medical_conditions": profile.get("medical_conditions", []),
+                    "needs_generation": False
                 },
                 "actions": []
             }
@@ -366,23 +318,18 @@ def create_tools(user_id: str, supabase, gemini_analyze_fn=None):
             return json.dumps({"card_type": "error", "data": {"message": f"Failed to preview goal: {str(e)}"}})
 
     @tool(args_schema=GetMealSuggestionsInput)
-    def get_meal_suggestions(meal_type: Optional[str] = None, max_calories: Optional[int] = None) -> str:
-        """Suggest healthy meals based on the user's remaining calorie budget and preferences.
-        Use this when user asks 'what should I eat?', 'suggest a meal', 'I'm hungry', etc."""
+    def get_meal_suggestions(suggestions_json: str, meal_type: str = "Any", max_calories: int = 0) -> str:
+        """Suggest healthy meals based on the user's request.
+        Use this when user asks 'what should I eat?', 'suggest a meal', 'I'm hungry', etc.
+        Return 3 generated suggestions natively parsed from the suggestions_json."""
         try:
-            # Get user context
-            try:
-                profile_result = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
-                profile = profile_result.data or {}
-            except:
-                profile = {}
-
-            # Get remaining calories
-            if not max_calories:
-                target_date = date.today().isoformat()
+            from datetime import date
+            if max_calories <= 0:
                 try:
-                    daily_result = supabase.table("daily_logs") \
-                        .select("*").eq("user_id", user_id).eq("date", target_date).single().execute()
+                    profile_result = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
+                    profile = profile_result.data or {}
+                    target_date = date.today().isoformat()
+                    daily_result = supabase.table("daily_logs").select("*").eq("user_id", user_id).eq("date", target_date).single().execute()
                     daily_log = daily_result.data or {}
                     calorie_target = profile.get("daily_calorie_target", 2000)
                     calories_in = daily_log.get("calories_in", 0)
@@ -390,22 +337,43 @@ def create_tools(user_id: str, supabase, gemini_analyze_fn=None):
                     max_calories = max(calorie_target - (calories_in - calories_out), 200)
                 except:
                     max_calories = 500
-
+            try:
+                suggestions = json.loads(suggestions_json)
+            except:
+                suggestions = []
+                
             result = {
                 "card_type": "meal_suggestions_card",
                 "data": {
-                    "needs_generation": True,
-                    "meal_type": meal_type or "any",
+                    "needs_generation": False,
+                    "meal_type": meal_type,
                     "max_calories": max_calories,
-                    "allergies": profile.get("allergies", []),
-                    "preferences": profile.get("preferences", []),
-                    "goal": profile.get("target_goal", "General Health"),
+                    "suggestions": suggestions,
                 },
                 "actions": []
             }
             return json.dumps(result)
-
         except Exception as e:
             return json.dumps({"card_type": "error", "data": {"message": f"Failed to get suggestions: {str(e)}"}})
 
-    return [log_meal, log_water, get_daily_summary, generate_recipe, set_calorie_goal, get_meal_suggestions]
+    @tool(args_schema=GenerateCustomUIInput)
+    def generate_custom_ui(title: str, layout_json: str) -> str:
+        """Create a completely custom dynamic UI layout when you want to show structured information that doesn't fit standard tools (e.g. workout plans, comparison tables).
+        Pass a dictionary with a 'layout' list encoded as a JSON string.
+        Available components for the layout: 'Heading', 'Text', 'Row' (contains 'items'), 'Badge' (contains 'text', 'bgColor'), 'Divider', 'ValueProp' (contains 'label', 'value', 'color')."""
+        try:
+            # Parse the string into dict to ensure it's valid JSON
+            layout_data = json.loads(layout_json)
+            layout_data["title"] = title
+            
+            result = {
+                "card_type": "dynamic_ui_card",
+                "data": layout_data,
+                "actions": []
+            }
+            return json.dumps(result)
+        except Exception as e:
+            return json.dumps({"card_type": "error", "data": {"message": f"Invalid dynamic UI JSON: {str(e)}"}})
+
+    return [log_meal, log_water, get_daily_summary, generate_recipe, set_calorie_goal, get_meal_suggestions, generate_custom_ui]
+
