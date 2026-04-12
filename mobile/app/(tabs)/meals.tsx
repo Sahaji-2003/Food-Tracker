@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -6,7 +6,6 @@ import {
     Image,
     ScrollView,
     ActivityIndicator,
-    Alert,
     TextInput,
     Modal,
 } from 'react-native';
@@ -14,9 +13,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, Image as ImageIcon, X, Flame, Zap, Check, Trash2 } from 'lucide-react-native';
+import LottieView from 'lottie-react-native';
 import { router } from 'expo-router';
 import { useThemeStore } from '@/store/useThemeStore';
 import { mealAPI } from '@/lib/api';
+import { useAlert } from '@/components/ui';
+import Confetti from '@/components/Confetti';
 
 interface MealItem {
     name: string;
@@ -60,6 +62,7 @@ interface MealHistoryItem {
 
 export default function MealsScreen() {
     const { colors } = useThemeStore();
+    const { showAlert } = useAlert();
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysis, setAnalysis] = useState<MealAnalysis | null>(null);
@@ -67,6 +70,7 @@ export default function MealsScreen() {
     const [textInput, setTextInput] = useState('');
     const [mealHistory, setMealHistory] = useState<MealHistoryItem[]>([]);
     const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+    const [showConfetti, setShowConfetti] = useState(false);
 
     const formatMealTime = (dateString: string): string => {
         const date = new Date(dateString);
@@ -102,7 +106,11 @@ export default function MealsScreen() {
         if (useCamera) {
             const { status } = await ImagePicker.requestCameraPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permission needed', 'Camera access is required to take photos');
+                showAlert({
+                    title: 'Permission Needed',
+                    message: 'Camera access is required to take photos.',
+                    type: 'warning',
+                });
                 return;
             }
             result = await ImagePicker.launchCameraAsync({
@@ -114,7 +122,11 @@ export default function MealsScreen() {
         } else {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permission needed', 'Gallery access is required to select photos');
+                showAlert({
+                    title: 'Permission Needed',
+                    message: 'Gallery access is required to select photos.',
+                    type: 'warning',
+                });
                 return;
             }
             result = await ImagePicker.launchImageLibraryAsync({
@@ -148,7 +160,12 @@ export default function MealsScreen() {
             loadMealHistory(); // Refresh history
         } catch (error: any) {
             console.error('Analysis failed:', error);
-            Alert.alert('Analysis Failed', error.message || 'Failed to analyze meal. Please try again.');
+            const errorMessage = error.response?.data?.detail || error.message || 'Failed to analyze meal. Please try again.';
+            showAlert({
+                title: 'Analysis Failed',
+                message: errorMessage,
+                type: 'error',
+            });
             setShowResultModal(false);
         } finally {
             setIsAnalyzing(false);
@@ -168,7 +185,12 @@ export default function MealsScreen() {
             loadMealHistory();
         } catch (error: any) {
             console.error('Analysis failed:', error);
-            Alert.alert('Analysis Failed', error.message || 'Failed to analyze meal. Please try again.');
+            const errorMessage = error.response?.data?.detail || error.message || 'Failed to analyze meal. Please try again.';
+            showAlert({
+                title: 'Analysis Failed',
+                message: errorMessage,
+                type: 'error',
+            });
             setShowResultModal(false);
         } finally {
             setIsAnalyzing(false);
@@ -194,10 +216,11 @@ export default function MealsScreen() {
     };
 
     const deleteMeal = async (mealId: string) => {
-        Alert.alert(
-            'Delete Meal',
-            'Are you sure you want to delete this meal?',
-            [
+        showAlert({
+            title: 'Delete Meal',
+            message: 'Are you sure you want to delete this meal?',
+            type: 'warning',
+            buttons: [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: 'Delete',
@@ -208,12 +231,16 @@ export default function MealsScreen() {
                             loadMealHistory();
                         } catch (error) {
                             console.error('Failed to delete meal:', error);
-                            Alert.alert('Error', 'Failed to delete meal');
+                            showAlert({
+                                title: 'Error',
+                                message: 'Failed to delete meal.',
+                                type: 'error',
+                            });
                         }
                     },
                 },
-            ]
-        );
+            ],
+        });
     };
 
     return (
@@ -407,13 +434,18 @@ export default function MealsScreen() {
 
                         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
                             {isAnalyzing ? (
-                                <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-                                    <ActivityIndicator size="large" color={colors.primary} />
-                                    <Text style={{ color: colors.foreground, marginTop: 16, fontSize: 18 }}>
+                                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 100 }}>
+                                    <LottieView
+                                        source={{ uri: 'https://lottie.host/d6aab505-53e3-41e0-9fdf-9054f1a0bfd4/9dkF5MRQdG.lottie' }}
+                                        style={{ width: 200, height: 200 }}
+                                        autoPlay
+                                        loop
+                                    />
+                                    <Text style={{ color: colors.foreground, marginTop: 16, fontSize: 18, fontWeight: '600' }}>
                                         Analyzing your meal...
                                     </Text>
-                                    <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>
-                                        This may take a few seconds
+                                    <Text style={{ color: colors.mutedForeground, marginTop: 8, textAlign: 'center', paddingHorizontal: 32 }}>
+                                        Our AI is identifying ingredients and calculating nutrition info
                                     </Text>
                                 </View>
                             ) : analysis ? (
@@ -669,6 +701,7 @@ export default function MealsScreen() {
                                             marginBottom: 16,
                                             alignItems: 'center',
                                         }}>
+                                            <Confetti visible={!isAnalyzing && (!analysis.tasks || analysis.tasks.length === 0)} />
                                             <Text style={{ fontSize: 32 }}>🎉</Text>
                                             <Text style={{ color: '#22c55e', fontWeight: '600', fontSize: 16, marginTop: 8 }}>
                                                 Great Choice!

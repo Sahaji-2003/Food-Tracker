@@ -1,12 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, Switch, Alert, ScrollView, TextInput, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, Switch, ScrollView, TextInput, Modal, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
-import { LogOut, ChevronRight, ChevronDown, User, Moon, Sun, Edit2, Plus, X, Check, Target, Activity, AlertTriangle, Heart, Scale, Ruler } from 'lucide-react-native';
+import { LogOut, ChevronRight, ChevronDown, User, Moon, Sun, Edit2, Plus, X, Check, Target, Activity, AlertTriangle, Heart, Scale, Ruler, Smartphone, RefreshCw } from 'lucide-react-native';
 import { supabase, Profile } from '@/lib/supabase';
 import { useStore } from '@/store/useStore';
 import { useThemeStore } from '@/store/useThemeStore';
 import { profileAPI } from '@/lib/api';
+import { useAlert } from '@/components/ui';
+import { router } from 'expo-router';
+import { Platform } from 'react-native';
+import {
+    getSyncStatus,
+    toggleSync,
+    performSync,
+    formatLastSyncTime,
+    isHealthConnectAvailable,
+    checkHealthConnectAvailability,
+    requestHealthPermissions,
+    HealthData,
+} from '@/lib/healthConnect';
 
 const GOAL_OPTIONS = ['Weight Loss', 'Weight Gain', 'Muscle Building', 'Maintain Weight', 'General Health', 'Athletic Performance'];
 const ACTIVITY_OPTIONS = ['Walking', 'Running', 'Cycling', 'Swimming', 'Yoga', 'Weight Training', 'HIIT', 'Dancing', 'Sports'];
@@ -28,6 +41,7 @@ interface ProfileData {
 export default function ProfileScreen() {
     const { user, profile, setProfile } = useStore();
     const { colors, mode, toggleTheme } = useThemeStore();
+    const { showAlert } = useAlert();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [profileData, setProfileData] = useState<ProfileData>({});
@@ -36,6 +50,12 @@ export default function ProfileScreen() {
     const [editSection, setEditSection] = useState<string | null>(null);
     const [tempValue, setTempValue] = useState<string>('');
     const [customInput, setCustomInput] = useState('');
+
+    // Health Connect state
+    const [syncEnabled, setSyncEnabled] = useState(false);
+    const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [lastSyncData, setLastSyncData] = useState<HealthData | null>(null);
 
     const fetchProfile = async () => {
         try {
@@ -53,8 +73,108 @@ export default function ProfileScreen() {
     useFocusEffect(
         useCallback(() => {
             fetchProfile();
+            fetchSyncStatus();
         }, [])
     );
+
+    // Health Connect functions
+    const fetchSyncStatus = async () => {
+        if (Platform.OS !== 'android') return;
+
+        try {
+            const status = await getSyncStatus();
+            setSyncEnabled(status.syncEnabled);
+            setLastSyncTime(status.lastSyncTime);
+
+            // Get latest sync data if available
+            if (status.syncData && status.syncData.length > 0) {
+                const latest = status.syncData[status.syncData.length - 1];
+                setLastSyncData({
+                    steps: latest.steps || 0,
+                    caloriesBurned: latest.caloriesBurned || 0,
+                    activeMinutes: latest.activeMinutes || 0,
+                    distanceKm: latest.distanceKm || 0,
+                });
+            }
+        } catch (error) {
+            console.error('Failed to fetch sync status:', error);
+        }
+    };
+
+    const handleToggleSync = async (enabled: boolean) => {
+        if (enabled) {
+            // Check if Health Connect is available first
+            const availability = await checkHealthConnectAvailability();
+            if (!availability.available) {
+                showAlert({
+                    title: 'Health Connect Not Available',
+                    message: availability.status + '. Please install or update Health Connect from the Play Store.',
+                    type: 'warning',
+                });
+                return;
+            }
+            
+            // Request permissions
+            const hasPermissions = await requestHealthPermissions();
+            if (!hasPermissions) {
+                showAlert({
+                    title: 'Permissions Required',
+                    message: 'Please grant Health Connect permissions to sync your health data.',
+                    type: 'warning',
+                });
+                return;
+            }
+        }
+        
+        setSyncEnabled(enabled);
+        const success = await toggleSync(enabled);
+
+        if (!success) {
+            setSyncEnabled(!enabled);
+            showAlert({
+                title: 'Error',
+                message: 'Failed to update sync settings. Please try again.',
+                type: 'error',
+            });
+        } else if (enabled) {
+            // Auto sync when enabled
+            handleSyncNow();
+        }
+    };
+
+    const handleSyncNow = async () => {
+        setIsSyncing(true);
+
+        try {
+            const result = await performSync();
+
+            if (result.success && result.data) {
+                setLastSyncData(result.data);
+                setLastSyncTime(new Date().toISOString());
+
+                showAlert({
+                    title: 'Sync Complete',
+                    message: `Synced ${result.data.steps.toLocaleString()} steps, ${result.data.caloriesBurned} calories burned, ${result.data.distanceKm} km`,
+                    type: 'success',
+                });
+            } else {
+                showAlert({
+                    title: 'Sync Failed',
+                    message: result.error || 'Unable to sync health data. Please try again.',
+                    type: 'error',
+                });
+            }
+        } catch (error) {
+            console.error('Sync failed:', error);
+            showAlert({
+                title: 'Sync Failed',
+                message: 'An error occurred during sync.',
+                type: 'error',
+            });
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     const saveProfile = async (updates: Partial<ProfileData>) => {
         setSaving(true);
@@ -65,7 +185,11 @@ export default function ProfileScreen() {
             setProfile(newData as Profile);
             setEditSection(null);
         } catch (error) {
-            Alert.alert('Error', 'Failed to save profile');
+            showAlert({
+                title: 'Error',
+                message: 'Failed to save profile. Please try again.',
+                type: 'error',
+            });
         } finally {
             setSaving(false);
         }
@@ -100,17 +224,23 @@ export default function ProfileScreen() {
     };
 
     const handleSignOut = async () => {
-        Alert.alert('Sign Out', 'Are you sure?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Sign Out',
-                style: 'destructive',
-                onPress: async () => {
-                    await supabase.auth.signOut();
-                    setProfile(null);
+        showAlert({
+            title: 'Sign Out',
+            message: 'Are you sure you want to sign out?',
+            type: 'warning',
+            buttons: [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Sign Out',
+                    style: 'destructive',
+                    onPress: async () => {
+                        await supabase.auth.signOut();
+                        setProfile(null);
+                        router.replace('/login');
+                    },
                 },
-            },
-        ]);
+            ],
+        });
     };
 
     const Chip = ({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) => (
@@ -401,6 +531,106 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                     </View>
                 </View>
+
+                {/* Health Connect Sync */}
+                {Platform.OS === 'android' && (
+                    <>
+                        <SectionHeader title="Health Connect" icon={Smartphone} />
+                        <View style={{ backgroundColor: colors.secondary, borderRadius: 16, padding: 16 }}>
+                            {/* Sync Toggle */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ color: colors.foreground, fontWeight: '600' }}>Auto Sync</Text>
+                                    <Text style={{ color: colors.mutedForeground, fontSize: 12, marginTop: 2 }}>
+                                        Sync steps & activity from Health Connect
+                                    </Text>
+                                </View>
+                                <Switch
+                                    value={syncEnabled}
+                                    onValueChange={handleToggleSync}
+                                    trackColor={{ false: colors.muted, true: colors.primary }}
+                                    thumbColor="#fff"
+                                />
+                            </View>
+
+                            {/* Status */}
+                            <View style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                paddingTop: 12,
+                                borderTopWidth: 1,
+                                borderTopColor: colors.border
+                            }}>
+                                <View style={{
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: 4,
+                                    backgroundColor: syncEnabled ? '#22c55e' : colors.mutedForeground,
+                                    marginRight: 8,
+                                }} />
+                                <Text style={{ color: colors.mutedForeground, flex: 1, fontSize: 13 }}>
+                                    {syncEnabled ? 'Connected' : 'Not connected'} • {formatLastSyncTime(lastSyncTime)}
+                                </Text>
+                            </View>
+
+                            {/* Last Sync Data */}
+                            {lastSyncData && (
+                                <View style={{
+                                    flexDirection: 'row',
+                                    marginTop: 12,
+                                    paddingTop: 12,
+                                    borderTopWidth: 1,
+                                    borderTopColor: colors.border,
+                                    gap: 12
+                                }}>
+                                    <View style={{ flex: 1, alignItems: 'center' }}>
+                                        <Text style={{ color: colors.primary, fontWeight: 'bold', fontSize: 18 }}>
+                                            {lastSyncData.steps.toLocaleString()}
+                                        </Text>
+                                        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Steps</Text>
+                                    </View>
+                                    <View style={{ flex: 1, alignItems: 'center' }}>
+                                        <Text style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: 18 }}>
+                                            {lastSyncData.caloriesBurned}
+                                        </Text>
+                                        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Cal Burned</Text>
+                                    </View>
+                                    <View style={{ flex: 1, alignItems: 'center' }}>
+                                        <Text style={{ color: '#22c55e', fontWeight: 'bold', fontSize: 18 }}>
+                                            {lastSyncData.activeMinutes}
+                                        </Text>
+                                        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Active Min</Text>
+                                    </View>
+                                </View>
+                            )}
+
+                            {/* Sync Now Button */}
+                            <TouchableOpacity
+                                onPress={handleSyncNow}
+                                disabled={isSyncing}
+                                style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    backgroundColor: colors.primary,
+                                    borderRadius: 12,
+                                    paddingVertical: 12,
+                                    marginTop: 16,
+                                    opacity: isSyncing ? 0.7 : 1,
+                                }}
+                            >
+                                {isSyncing ? (
+                                    <ActivityIndicator size="small" color="#fff" />
+                                ) : (
+                                    <RefreshCw size={18} color="#fff" />
+                                )}
+                                <Text style={{ color: '#fff', fontWeight: '600', marginLeft: 8 }}>
+                                    {isSyncing ? 'Syncing...' : 'Sync Now'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </>
+                )}
 
                 {/* Theme Toggle */}
                 <SectionHeader title="Settings" icon={Moon} />

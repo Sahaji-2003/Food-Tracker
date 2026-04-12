@@ -7,3 +7,4 @@ export { Badge, badgeVariants } from './badge';
 export { Progress } from './progress';
 export { Avatar, avatarVariants } from './avatar';
 export { Separator, Skeleton, IconButton } from './misc';
+export { AlertProvider, useAlert } from './CustomAlert';

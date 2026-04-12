@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
     View,
     Text,
@@ -6,9 +6,16 @@ import {
     ActivityIndicator,
     Dimensions,
     ScrollView,
+    Animated,
+    KeyboardAvoidingView,
+    Platform,
+    Modal,
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import LottieView from 'lottie-react-native';
+import { ChevronRight, Check, FastForward, Bot } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useThemeStore } from '@/store/useThemeStore';
 
@@ -27,7 +34,129 @@ interface FormData {
     preferredTasks: string[];
 }
 
-// Simple Scroll Number Picker (no FlatList)
+interface Message {
+    id: string;
+    type: 'bot' | 'user';
+    content: string;
+    inputType?: 'weight' | 'height' | 'gender' | 'age' | 'goal' | 'targetWeight' | 'activities' | 'allergies' | 'confirm';
+}
+
+// Bot Message Bubble - Lottie only for latest, static icon for past messages
+const BotBubble = ({
+    content,
+    showAvatar = true,
+    isLatest = false,
+    colors,
+}: {
+    content: string;
+    showAvatar?: boolean;
+    isLatest?: boolean;
+    colors: any;
+}) => {
+    return (
+        <View style={{
+            flexDirection: 'row',
+            alignItems: 'flex-end',
+            marginBottom: 12,
+        }}>
+            {showAvatar ? (
+                <View style={{
+                    width: 36,
+                    height: 36,
+                    marginRight: 8,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 18,
+                    backgroundColor: isLatest ? 'transparent' : colors.secondary,
+                }}>
+                    {isLatest ? (
+                        <LottieView
+                            source={{ uri: 'https://lottie.host/67866d35-74bb-4d0a-82d8-3201d5f54bef/N6cgEFzQDP.lottie' }}
+                            style={{ width: 40, height: 40 }}
+                            autoPlay
+                            loop
+                        />
+                    ) : (
+                        <Bot size={20} color={colors.primary} />
+                    )}
+                </View>
+            ) : (
+                <View style={{ width: 44 }} />
+            )}
+            <View style={{
+                backgroundColor: colors.secondary,
+                borderRadius: 18,
+                borderBottomLeftRadius: 4,
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                maxWidth: SCREEN_WIDTH * 0.7,
+            }}>
+                <Text style={{ color: colors.foreground, fontSize: 16, lineHeight: 22 }}>
+                    {content}
+                </Text>
+            </View>
+        </View>
+    );
+};
+
+// User Message Bubble (no animation to prevent flickering)
+const UserBubble = ({ content, colors }: { content: string; colors: any }) => {
+    return (
+        <View style={{
+            flexDirection: 'row',
+            justifyContent: 'flex-end',
+            marginBottom: 12,
+        }}>
+            <LinearGradient
+                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{
+                    borderRadius: 18,
+                    borderBottomRightRadius: 4,
+                    paddingHorizontal: 16,
+                    paddingVertical: 12,
+                    maxWidth: SCREEN_WIDTH * 0.7,
+                }}
+            >
+                <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '500' }}>
+                    {content}
+                </Text>
+            </LinearGradient>
+        </View>
+    );
+};
+
+// Typing Indicator (simple static dots - no animation to prevent flicker)
+const TypingIndicator = ({ colors }: { colors: any }) => {
+    return (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12 }}>
+            <View style={{ width: 40, height: 40, marginRight: 8 }}>
+                <LottieView
+                    source={{ uri: 'https://lottie.host/67866d35-74bb-4d0a-82d8-3201d5f54bef/N6cgEFzQDP.lottie' }}
+                    style={{ width: 40, height: 40 }}
+                    autoPlay
+                    loop
+                />
+            </View>
+            <View style={{
+                backgroundColor: colors.secondary,
+                borderRadius: 18,
+                borderBottomLeftRadius: 4,
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+            }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.mutedForeground, marginHorizontal: 2, opacity: 0.5 }} />
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.mutedForeground, marginHorizontal: 2, opacity: 0.7 }} />
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.mutedForeground, marginHorizontal: 2, opacity: 1 }} />
+            </View>
+        </View>
+    );
+};
+
+// Scroll Number Picker
 const ScrollPicker = ({
     min,
     max,
@@ -44,35 +173,27 @@ const ScrollPicker = ({
     colors: any;
 }) => {
     const scrollRef = useRef<ScrollView>(null);
-    const ITEM_HEIGHT = 50;
+    const ITEM_HEIGHT = 44;
     const numbers = Array.from({ length: max - min + 1 }, (_, i) => min + i);
 
     const handleScroll = useCallback((event: any) => {
         const offsetY = event.nativeEvent.contentOffset.y;
         const index = Math.round(offsetY / ITEM_HEIGHT);
         const newValue = numbers[Math.min(Math.max(index, 0), numbers.length - 1)];
-        if (newValue !== value) {
-            onChange(newValue);
-        }
+        if (newValue !== value) onChange(newValue);
     }, [value, onChange, numbers]);
 
     return (
         <View style={{ height: ITEM_HEIGHT * 3, overflow: 'hidden' }}>
-            {/* Selection highlight */}
-            <View
-                style={{
-                    position: 'absolute',
-                    top: ITEM_HEIGHT,
-                    left: 0,
-                    right: 0,
-                    height: ITEM_HEIGHT,
-                    backgroundColor: colors.primary + '20',
-                    borderRadius: 12,
-                    zIndex: 1,
-                }}
-                pointerEvents="none"
-            />
-
+            <View style={{
+                position: 'absolute',
+                top: ITEM_HEIGHT,
+                left: 0,
+                right: 0,
+                height: ITEM_HEIGHT,
+                backgroundColor: colors.primary + '25',
+                borderRadius: 10,
+            }} pointerEvents="none" />
             <ScrollView
                 ref={scrollRef}
                 showsVerticalScrollIndicator={false}
@@ -82,114 +203,78 @@ const ScrollPicker = ({
                 contentContainerStyle={{ paddingVertical: ITEM_HEIGHT }}
                 nestedScrollEnabled
             >
-                {numbers.map((num) => {
-                    const isSelected = num === value;
-                    return (
-                        <TouchableOpacity
-                            key={num}
-                            onPress={() => {
-                                onChange(num);
-                                scrollRef.current?.scrollTo({
-                                    y: (num - min) * ITEM_HEIGHT,
-                                    animated: true,
-                                });
-                            }}
-                            style={{
-                                height: ITEM_HEIGHT,
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                            }}
-                        >
-                            <Text
-                                style={{
-                                    fontSize: isSelected ? 28 : 18,
-                                    fontWeight: isSelected ? 'bold' : '400',
-                                    color: isSelected ? colors.primary : colors.mutedForeground,
-                                }}
-                            >
-                                {num}{suffix}
-                            </Text>
-                        </TouchableOpacity>
-                    );
-                })}
+                {numbers.map((num) => (
+                    <TouchableOpacity
+                        key={num}
+                        onPress={() => {
+                            onChange(num);
+                            scrollRef.current?.scrollTo({ y: (num - min) * ITEM_HEIGHT, animated: true });
+                        }}
+                        style={{ height: ITEM_HEIGHT, justifyContent: 'center', alignItems: 'center' }}
+                    >
+                        <Text style={{
+                            fontSize: num === value ? 24 : 16,
+                            fontWeight: num === value ? 'bold' : '400',
+                            color: num === value ? colors.primary : colors.mutedForeground,
+                        }}>
+                            {num}{suffix}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
             </ScrollView>
         </View>
     );
 };
 
-// Selection Card
-const SelectionCard = ({
+// Selection Option Card
+const OptionCard = ({
     label,
-    isSelected,
-    onPress,
-    colors,
     icon,
-}: {
-    label: string;
-    isSelected: boolean;
-    onPress: () => void;
-    colors: any;
-    icon?: string;
-}) => (
-    <TouchableOpacity
-        onPress={onPress}
-        style={{
-            flex: 1,
-            paddingVertical: 16,
-            paddingHorizontal: 12,
-            borderRadius: 16,
-            backgroundColor: isSelected ? colors.primary : colors.secondary,
-            alignItems: 'center',
-            marginHorizontal: 4,
-        }}
-    >
-        {icon && <Text style={{ fontSize: 24, marginBottom: 4 }}>{icon}</Text>}
-        <Text
-            style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: isSelected ? '#ffffff' : colors.foreground,
-                textTransform: 'capitalize',
-            }}
-        >
-            {label}
-        </Text>
-    </TouchableOpacity>
-);
-
-// Allergy Chip
-const AllergyChip = ({
-    label,
     isSelected,
     onPress,
     colors,
+    small = false,
 }: {
     label: string;
+    icon?: string;
     isSelected: boolean;
     onPress: () => void;
     colors: any;
+    small?: boolean;
 }) => (
     <TouchableOpacity
         onPress={onPress}
         style={{
-            paddingVertical: 8,
-            paddingHorizontal: 14,
-            borderRadius: 20,
+            paddingVertical: small ? 10 : 14,
+            paddingHorizontal: small ? 14 : 18,
+            borderRadius: 14,
             backgroundColor: isSelected ? colors.primary : colors.secondary,
-            margin: 4,
+            marginRight: 8,
+            marginBottom: 8,
+            flexDirection: 'row',
+            alignItems: 'center',
         }}
     >
-        <Text style={{ fontSize: 13, fontWeight: '500', color: isSelected ? '#ffffff' : colors.foreground }}>
+        {icon && <Text style={{ fontSize: small ? 16 : 20, marginRight: 6 }}>{icon}</Text>}
+        <Text style={{
+            fontSize: small ? 13 : 15,
+            fontWeight: '600',
+            color: isSelected ? '#ffffff' : colors.foreground,
+        }}>
             {label}
         </Text>
+        {isSelected && <Check size={14} color="#fff" style={{ marginLeft: 4 }} />}
     </TouchableOpacity>
 );
 
 export default function OnboardingScreen() {
     const { colors } = useThemeStore();
-    const [step, setStep] = useState(1);
+    const scrollViewRef = useRef<ScrollView>(null);
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [currentStep, setCurrentStep] = useState(0);
+    const [isTyping, setIsTyping] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-    const totalSteps = 5;
+    const [showSkipDialog, setShowSkipDialog] = useState(false);
 
     const [formData, setFormData] = useState<FormData>({
         weight: 70,
@@ -209,41 +294,84 @@ export default function OnboardingScreen() {
         { value: 'General Health', icon: '❤️' },
     ];
 
-    const commonAllergies = ['Dairy', 'Eggs', 'Peanuts', 'Gluten', 'Soy', 'Fish', 'Shellfish', 'None'];
-
     const genderOptions = [
-        { value: 'male' as const, icon: '👨' },
-        { value: 'female' as const, icon: '👩' },
-        { value: 'other' as const, icon: '🧑' },
+        { value: 'male' as const, label: 'Male', icon: '👨' },
+        { value: 'female' as const, label: 'Female', icon: '👩' },
+        { value: 'other' as const, label: 'Other', icon: '🧑' },
     ];
 
-    const preferredTaskOptions = [
+    const activityOptions = [
         { value: 'walking', label: 'Walking', icon: '🚶' },
         { value: 'running', label: 'Running', icon: '🏃' },
         { value: 'cycling', label: 'Cycling', icon: '🚴' },
-        { value: 'swimming', label: 'Swimming', icon: '🏊' },
-        { value: 'gym', label: 'Gym Workout', icon: '🏋️' },
+        { value: 'gym', label: 'Gym', icon: '🏋️' },
         { value: 'yoga', label: 'Yoga', icon: '🧘' },
-        { value: 'hiit', label: 'HIIT', icon: '⚡' },
+        { value: 'swimming', label: 'Swimming', icon: '🏊' },
     ];
 
-    const canProceed = (): boolean => {
-        switch (step) {
-            case 1: return formData.weight > 0 && formData.height > 0;
-            case 2: return formData.gender !== '' && formData.age > 0;
-            case 3: return formData.goal !== '';
-            case 4: return formData.preferredTasks.length > 0;
-            case 5: return true;
-            default: return false;
+    const allergyOptions = ['Dairy', 'Gluten', 'Peanuts', 'Eggs', 'Soy', 'Fish', 'None'];
+
+    const conversationFlow = [
+        { bot: "Hello there! 👋", inputType: null },
+        { bot: "I'm Fit Buddy, your personal health assistant!", inputType: null },
+        { bot: "Let's create a personalized fitness plan just for you. Ready? 🚀", inputType: null },
+        { bot: "First, what's your current weight?", inputType: 'weight' },
+        { bot: "Great! And how tall are you?", inputType: 'height' },
+        { bot: "Nice! Now, what's your gender?", inputType: 'gender' },
+        { bot: "And how old are you?", inputType: 'age' },
+        { bot: "What's your main fitness goal?", inputType: 'goal' },
+        { bot: "What's your target weight? 🎯", inputType: 'targetWeight' },
+        { bot: "What activities do you enjoy? (Select all that apply)", inputType: 'activities' },
+        { bot: "Almost done! Any food allergies I should know about?", inputType: 'allergies' },
+        { bot: "Perfect! I've got everything I need. Let's start your journey! 🎉", inputType: 'confirm' },
+    ];
+
+    useEffect(() => {
+        // Start the conversation
+        addBotMessage(0);
+    }, []);
+
+    useEffect(() => {
+        // Auto scroll to bottom when messages change
+        if (messages.length > 0) {
+            setTimeout(() => {
+                scrollViewRef.current?.scrollToEnd({ animated: true });
+            }, 150);
+        }
+    }, [messages.length]);
+
+    const addBotMessage = async (stepIndex: number) => {
+        if (stepIndex >= conversationFlow.length) return;
+
+        setIsTyping(true);
+
+        // Simulate typing delay
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        setIsTyping(false);
+        setMessages(prev => [...prev, {
+            id: `bot-${stepIndex}`,
+            type: 'bot',
+            content: conversationFlow[stepIndex].bot,
+            inputType: conversationFlow[stepIndex].inputType as any,
+        }]);
+
+        setCurrentStep(stepIndex);
+
+        // Auto-advance intro messages (first 3 have no inputType)
+        if (!conversationFlow[stepIndex].inputType && stepIndex < 3) {
+            setTimeout(() => addBotMessage(stepIndex + 1), 600);
         }
     };
 
-    const handleNext = () => {
-        if (step < totalSteps) {
-            setStep(step + 1);
-        } else {
-            handleSubmit();
-        }
+    const handleUserResponse = (response: string, nextStep: number) => {
+        setMessages(prev => [...prev, {
+            id: `user-${nextStep}`,
+            type: 'user',
+            content: response,
+        }]);
+
+        setTimeout(() => addBotMessage(nextStep), 500);
     };
 
     const handleSubmit = async () => {
@@ -252,6 +380,8 @@ export default function OnboardingScreen() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error('Not authenticated');
 
+            const calories = calculateCalories();
+
             const { error } = await supabase.from('profiles').upsert({
                 id: user.id,
                 weight: formData.weight,
@@ -259,9 +389,10 @@ export default function OnboardingScreen() {
                 gender: formData.gender,
                 age: formData.age,
                 target_goal: formData.goal,
+                target_weight: formData.targetWeight,
                 allergies: formData.allergies.filter(a => a !== 'None'),
                 preferred_tasks: formData.preferredTasks,
-                daily_calorie_target: calculateCalories(),
+                daily_calorie_target: calories,
             });
 
             if (error) throw error;
@@ -283,292 +414,442 @@ export default function OnboardingScreen() {
         return Math.round(tdee);
     };
 
-    const toggleAllergy = (allergy: string) => {
-        if (allergy === 'None') {
-            setFormData({ ...formData, allergies: ['None'] });
-        } else {
-            const newAllergies = formData.allergies.includes(allergy)
-                ? formData.allergies.filter(a => a !== allergy)
-                : [...formData.allergies.filter(a => a !== 'None'), allergy];
-            setFormData({ ...formData, allergies: newAllergies });
-        }
-    };
+    const currentInputType = conversationFlow[currentStep]?.inputType;
 
-    return (
-        <View style={{ flex: 1, backgroundColor: colors.background }}>
-            <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 60, paddingBottom: 24 }}>
-                {/* Progress Bar */}
-                <View style={{ marginBottom: 24 }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>
-                            Step {step} of {totalSteps}
+    const renderInputArea = () => {
+        // Show input area when not typing and current step has an input type
+        if (isTyping || !currentInputType) return null;
+
+        switch (currentInputType) {
+            case 'weight':
+                return (
+                    <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+                        <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
+                            Weight (kg)
                         </Text>
-                        <Text style={{ color: colors.primary, fontSize: 14, fontWeight: '600' }}>
-                            {Math.round((step / totalSteps) * 100)}%
-                        </Text>
-                    </View>
-                    <View style={{ height: 4, backgroundColor: colors.secondary, borderRadius: 2 }}>
-                        <View
-                            style={{
-                                height: 4,
-                                width: `${(step / totalSteps) * 100}%`,
-                                backgroundColor: colors.primary,
-                                borderRadius: 2,
-                            }}
+                        <ScrollPicker
+                            min={30}
+                            max={200}
+                            value={formData.weight}
+                            onChange={(val) => setFormData({ ...formData, weight: val })}
+                            colors={colors}
                         />
+                        <TouchableOpacity
+                            onPress={() => handleUserResponse(`${formData.weight} kg`, currentStep + 1)}
+                            style={{ marginTop: 12 }}
+                        >
+                            <LinearGradient
+                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
+                                style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
+                                <ChevronRight size={18} color="#fff" />
+                            </LinearGradient>
+                        </TouchableOpacity>
                     </View>
-                </View>
+                );
 
-                {/* Step 1: Weight & Height - Side by Side */}
-                {step === 1 && (
-                    <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 26, fontWeight: 'bold', color: colors.foreground, marginBottom: 4 }}>
-                            Body Measurements
+            case 'height':
+                return (
+                    <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+                        <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
+                            Height (cm)
                         </Text>
-                        <Text style={{ color: colors.mutedForeground, marginBottom: 24 }}>
-                            For accurate calorie calculations
-                        </Text>
-
-                        <View style={{ flexDirection: 'row', gap: 16 }}>
-                            {/* Weight */}
-                            <View style={{ flex: 1, backgroundColor: colors.secondary, borderRadius: 16, padding: 16 }}>
-                                <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
-                                    Weight (kg)
-                                </Text>
-                                <ScrollPicker
-                                    min={30}
-                                    max={200}
-                                    value={formData.weight}
-                                    onChange={(val) => setFormData({ ...formData, weight: val })}
-                                    colors={colors}
-                                />
-                            </View>
-
-                            {/* Height */}
-                            <View style={{ flex: 1, backgroundColor: colors.secondary, borderRadius: 16, padding: 16 }}>
-                                <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
-                                    Height (cm)
-                                </Text>
-                                <ScrollPicker
-                                    min={100}
-                                    max={220}
-                                    value={formData.height}
-                                    onChange={(val) => setFormData({ ...formData, height: val })}
-                                    colors={colors}
-                                />
-                            </View>
-                        </View>
-
-                        {/* Current Selection Display */}
-                        <View style={{ alignItems: 'center', marginTop: 24 }}>
-                            <Text style={{ fontSize: 32, fontWeight: 'bold', color: colors.primary }}>
-                                {formData.weight} kg • {formData.height} cm
-                            </Text>
-                            <Text style={{ color: colors.mutedForeground, marginTop: 4 }}>
-                                BMI: {(formData.weight / ((formData.height / 100) ** 2)).toFixed(1)}
-                            </Text>
-                        </View>
+                        <ScrollPicker
+                            min={100}
+                            max={220}
+                            value={formData.height}
+                            onChange={(val) => setFormData({ ...formData, height: val })}
+                            colors={colors}
+                        />
+                        <TouchableOpacity
+                            onPress={() => handleUserResponse(`${formData.height} cm`, currentStep + 1)}
+                            style={{ marginTop: 12 }}
+                        >
+                            <LinearGradient
+                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
+                                style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
+                                <ChevronRight size={18} color="#fff" />
+                            </LinearGradient>
+                        </TouchableOpacity>
                     </View>
-                )}
+                );
 
-                {/* Step 2: Gender & Age */}
-                {step === 2 && (
-                    <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 26, fontWeight: 'bold', color: colors.foreground, marginBottom: 4 }}>
-                            About You
-                        </Text>
-                        <Text style={{ color: colors.mutedForeground, marginBottom: 24 }}>
-                            Helps personalize your experience
-                        </Text>
-
-                        <Text style={{ color: colors.foreground, fontWeight: '600', marginBottom: 12 }}>Gender</Text>
-                        <View style={{ flexDirection: 'row', marginBottom: 24 }}>
+            case 'gender':
+                return (
+                    <View style={{ marginBottom: 16 }}>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                             {genderOptions.map((option) => (
-                                <SelectionCard
+                                <OptionCard
                                     key={option.value}
-                                    label={option.value}
+                                    label={option.label}
                                     icon={option.icon}
                                     isSelected={formData.gender === option.value}
-                                    onPress={() => setFormData({ ...formData, gender: option.value })}
+                                    onPress={() => {
+                                        setFormData({ ...formData, gender: option.value });
+                                        setTimeout(() => handleUserResponse(option.label, currentStep + 1), 300);
+                                    }}
                                     colors={colors}
                                 />
                             ))}
                         </View>
-
-                        <Text style={{ color: colors.foreground, fontWeight: '600', marginBottom: 12 }}>Age</Text>
-                        <View style={{ backgroundColor: colors.secondary, borderRadius: 16, padding: 16 }}>
-                            <ScrollPicker
-                                min={13}
-                                max={90}
-                                value={formData.age}
-                                onChange={(val) => setFormData({ ...formData, age: val })}
-                                suffix=" yrs"
-                                colors={colors}
-                            />
-                        </View>
                     </View>
-                )}
+                );
 
-                {/* Step 3: Goal */}
-                {step === 3 && (
-                    <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 26, fontWeight: 'bold', color: colors.foreground, marginBottom: 4 }}>
-                            Your Goal
+            case 'age':
+                return (
+                    <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+                        <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
+                            Age (years)
                         </Text>
-                        <Text style={{ color: colors.mutedForeground, marginBottom: 24 }}>
-                            What would you like to achieve?
-                        </Text>
-
-                        {goals.map((goal) => (
-                            <TouchableOpacity
-                                key={goal.value}
-                                onPress={() => setFormData({ ...formData, goal: goal.value })}
-                                style={{
-                                    flexDirection: 'row',
-                                    alignItems: 'center',
-                                    paddingVertical: 18,
-                                    paddingHorizontal: 20,
-                                    borderRadius: 16,
-                                    backgroundColor: formData.goal === goal.value ? colors.primary : colors.secondary,
-                                    marginBottom: 12,
-                                }}
+                        <ScrollPicker
+                            min={13}
+                            max={90}
+                            value={formData.age}
+                            onChange={(val) => setFormData({ ...formData, age: val })}
+                            suffix=" yrs"
+                            colors={colors}
+                        />
+                        <TouchableOpacity
+                            onPress={() => handleUserResponse(`${formData.age} years old`, currentStep + 1)}
+                            style={{ marginTop: 12 }}
+                        >
+                            <LinearGradient
+                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
+                                style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
                             >
-                                <Text style={{ fontSize: 28, marginRight: 16 }}>{goal.icon}</Text>
-                                <Text
-                                    style={{
-                                        fontSize: 17,
-                                        fontWeight: '600',
-                                        color: formData.goal === goal.value ? '#ffffff' : colors.foreground,
-                                    }}
-                                >
-                                    {goal.value}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
+                                <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
+                                <ChevronRight size={18} color="#fff" />
+                            </LinearGradient>
+                        </TouchableOpacity>
                     </View>
-                )}
+                );
 
-                {/* Step 4: Preferred Tasks */}
-                {step === 4 && (
-                    <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 26, fontWeight: 'bold', color: colors.foreground, marginBottom: 4 }}>
-                            Preferred Activities
-                        </Text>
-                        <Text style={{ color: colors.mutedForeground, marginBottom: 24 }}>
-                            Select activities you enjoy (multi-select)
-                        </Text>
-
+            case 'goal':
+                return (
+                    <View style={{ marginBottom: 16 }}>
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                            {preferredTaskOptions.map((task) => {
-                                const isSelected = formData.preferredTasks.includes(task.value);
-                                return (
-                                    <TouchableOpacity
-                                        key={task.value}
-                                        onPress={() => {
-                                            const newTasks = isSelected
-                                                ? formData.preferredTasks.filter(t => t !== task.value)
-                                                : [...formData.preferredTasks, task.value];
-                                            setFormData({ ...formData, preferredTasks: newTasks });
-                                        }}
-                                        style={{
-                                            width: '48%',
-                                            margin: '1%',
-                                            paddingVertical: 16,
-                                            paddingHorizontal: 12,
-                                            borderRadius: 16,
-                                            backgroundColor: isSelected ? colors.primary : colors.secondary,
-                                            alignItems: 'center',
-                                            marginBottom: 8,
-                                        }}
-                                    >
-                                        <Text style={{ fontSize: 28, marginBottom: 4 }}>{task.icon}</Text>
-                                        <Text
-                                            style={{
-                                                fontSize: 14,
-                                                fontWeight: '600',
-                                                color: isSelected ? '#ffffff' : colors.foreground,
-                                            }}
-                                        >
-                                            {task.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                );
-                            })}
+                            {goals.map((goal) => (
+                                <OptionCard
+                                    key={goal.value}
+                                    label={goal.value}
+                                    icon={goal.icon}
+                                    isSelected={formData.goal === goal.value}
+                                    onPress={() => {
+                                        setFormData({ ...formData, goal: goal.value });
+                                        setTimeout(() => handleUserResponse(goal.value, currentStep + 1), 300);
+                                    }}
+                                    colors={colors}
+                                />
+                            ))}
                         </View>
                     </View>
-                )}
+                );
 
-                {/* Step 5: Allergies (optional) */}
-                {step === 5 && (
-                    <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 26, fontWeight: 'bold', color: colors.foreground, marginBottom: 4 }}>
-                            Food Allergies
+            case 'targetWeight':
+                return (
+                    <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+                        <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
+                            Target Weight (kg)
                         </Text>
-                        <Text style={{ color: colors.mutedForeground, marginBottom: 24 }}>
-                            Select any allergies (optional)
-                        </Text>
+                        <ScrollPicker
+                            min={30}
+                            max={200}
+                            value={formData.targetWeight}
+                            onChange={(val) => setFormData({ ...formData, targetWeight: val })}
+                            colors={colors}
+                        />
+                        <TouchableOpacity
+                            onPress={() => handleUserResponse(`${formData.targetWeight} kg`, currentStep + 1)}
+                            style={{ marginTop: 12 }}
+                        >
+                            <LinearGradient
+                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
+                                style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
+                                <ChevronRight size={18} color="#fff" />
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    </View>
+                );
 
+            case 'activities':
+                return (
+                    <View style={{ marginBottom: 16 }}>
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                            {commonAllergies.map((allergy) => (
-                                <AllergyChip
+                            {activityOptions.map((activity) => (
+                                <OptionCard
+                                    key={activity.value}
+                                    label={activity.label}
+                                    icon={activity.icon}
+                                    isSelected={formData.preferredTasks.includes(activity.value)}
+                                    onPress={() => {
+                                        const newTasks = formData.preferredTasks.includes(activity.value)
+                                            ? formData.preferredTasks.filter(t => t !== activity.value)
+                                            : [...formData.preferredTasks, activity.value];
+                                        setFormData({ ...formData, preferredTasks: newTasks });
+                                    }}
+                                    colors={colors}
+                                    small
+                                />
+                            ))}
+                        </View>
+                        {formData.preferredTasks.length > 0 && (
+                            <TouchableOpacity
+                                onPress={() => handleUserResponse(formData.preferredTasks.map(t =>
+                                    activityOptions.find(a => a.value === t)?.label || t
+                                ).join(', '), currentStep + 1)}
+                                style={{ marginTop: 8 }}
+                            >
+                                <LinearGradient
+                                    colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
+                                    style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+                                >
+                                    <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
+                                    <ChevronRight size={18} color="#fff" />
+                                </LinearGradient>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                );
+
+            case 'allergies':
+                return (
+                    <View style={{ marginBottom: 16 }}>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                            {allergyOptions.map((allergy) => (
+                                <OptionCard
                                     key={allergy}
                                     label={allergy}
                                     isSelected={formData.allergies.includes(allergy)}
-                                    onPress={() => toggleAllergy(allergy)}
+                                    onPress={() => {
+                                        if (allergy === 'None') {
+                                            setFormData({ ...formData, allergies: ['None'] });
+                                        } else {
+                                            const newAllergies = formData.allergies.includes(allergy)
+                                                ? formData.allergies.filter(a => a !== allergy)
+                                                : [...formData.allergies.filter(a => a !== 'None'), allergy];
+                                            setFormData({ ...formData, allergies: newAllergies });
+                                        }
+                                    }}
                                     colors={colors}
+                                    small
                                 />
                             ))}
                         </View>
-                    </View>
-                )}
-
-                {/* Navigation Buttons */}
-                <View style={{ marginTop: 'auto', paddingTop: 20 }}>
-                    <View style={{ flexDirection: 'row', gap: 12 }}>
-                        {step > 1 && (
-                            <TouchableOpacity
-                                onPress={() => setStep(step - 1)}
-                                style={{
-                                    flex: 1,
-                                    backgroundColor: colors.secondary,
-                                    paddingVertical: 16,
-                                    borderRadius: 12,
-                                    alignItems: 'center',
-                                }}
-                            >
-                                <Text style={{ color: colors.foreground, fontWeight: '600' }}>Back</Text>
-                            </TouchableOpacity>
-                        )}
-
                         <TouchableOpacity
-                            onPress={handleNext}
-                            disabled={isLoading || !canProceed()}
-                            style={{
-                                flex: step > 1 ? 1 : undefined,
-                                width: step === 1 ? '100%' : undefined,
-                                borderRadius: 12,
-                                overflow: 'hidden',
-                                opacity: canProceed() ? 1 : 0.5,
-                            }}
+                            onPress={() => handleUserResponse(
+                                formData.allergies.length > 0 ? formData.allergies.join(', ') : 'No allergies',
+                                currentStep + 1
+                            )}
+                            style={{ marginTop: 8 }}
                         >
                             <LinearGradient
-                                colors={[colors.gradientStart, colors.gradientEnd]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={{ paddingVertical: 16, alignItems: 'center' }}
+                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
+                                style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+                            >
+                                <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
+                                <ChevronRight size={18} color="#fff" />
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    </View>
+                );
+
+            case 'confirm':
+                return (
+                    <View style={{ marginBottom: 16 }}>
+                        <TouchableOpacity onPress={handleSubmit} disabled={isLoading}>
+                            <LinearGradient
+                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
+                                style={{
+                                    paddingVertical: 18,
+                                    borderRadius: 16,
+                                    alignItems: 'center',
+                                    opacity: isLoading ? 0.7 : 1,
+                                }}
                             >
                                 {isLoading ? (
-                                    <ActivityIndicator color="#ffffff" />
+                                    <ActivityIndicator color="#fff" />
                                 ) : (
-                                    <Text style={{ color: '#ffffff', fontWeight: '600' }}>
-                                        {step === totalSteps ? 'Get Started' : 'Continue'}
+                                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 17 }}>
+                                        🚀 Let's Go!
                                     </Text>
                                 )}
                             </LinearGradient>
                         </TouchableOpacity>
                     </View>
+                );
+
+            default:
+                return null;
+        }
+    };
+
+    return (
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            >
+                {/* Header */}
+                <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <LottieView
+                                source={{ uri: 'https://lottie.host/67866d35-74bb-4d0a-82d8-3201d5f54bef/N6cgEFzQDP.lottie' }}
+                                style={{ width: 50, height: 50 }}
+                                autoPlay
+                                loop
+                            />
+                            <View style={{ marginLeft: 10 }}>
+                                <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.foreground }}>Fit Buddy</Text>
+                                <Text style={{ fontSize: 12, color: colors.primary }}>Setting up your profile...</Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity
+                            onPress={() => setShowSkipDialog(true)}
+                            style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                paddingHorizontal: 12,
+                                paddingVertical: 8,
+                                borderRadius: 20,
+                                backgroundColor: colors.secondary,
+                            }}
+                        >
+                            <Text style={{ color: colors.mutedForeground, fontSize: 13, marginRight: 4 }}>Skip</Text>
+                            <FastForward size={16} color={colors.mutedForeground} />
+                        </TouchableOpacity>
+                    </View>
                 </View>
-            </View>
-        </View>
+
+                {/* Chat Messages with Inline Selectors */}
+                <ScrollView
+                    ref={scrollViewRef}
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{ padding: 16, paddingBottom: Platform.OS === 'ios' ? 24 : 32 }}
+                    keyboardShouldPersistTaps="handled"
+                >
+                    {messages.map((msg, index) => {
+                        // Find if this is the last bot message
+                        const lastBotIndex = messages.map((m, i) => m.type === 'bot' ? i : -1).filter(i => i !== -1).pop();
+                        const isLastBotMessage = msg.type === 'bot' && index === lastBotIndex;
+
+                        return msg.type === 'bot' ? (
+                            <BotBubble
+                                key={msg.id}
+                                content={msg.content}
+                                showAvatar={index === 0 || messages[index - 1]?.type !== 'bot'}
+                                isLatest={isLastBotMessage}
+                                colors={colors}
+                            />
+                        ) : (
+                            <UserBubble key={msg.id} content={msg.content} colors={colors} />
+                        );
+                    })}
+
+                    {isTyping && <TypingIndicator colors={colors} />}
+
+                    {/* Inline Input Selector - rendered inside chat */}
+                    {renderInputArea()}
+                </ScrollView>
+            </KeyboardAvoidingView>
+
+            {/* Skip Confirmation Modal */}
+            <Modal
+                visible={showSkipDialog}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowSkipDialog(false)}
+            >
+                <View style={{
+                    flex: 1,
+                    backgroundColor: 'rgba(0,0,0,0.6)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: 24,
+                }}>
+                    <View style={{
+                        backgroundColor: colors.card || colors.background,
+                        borderRadius: 20,
+                        padding: 24,
+                        width: '100%',
+                        maxWidth: 340,
+                    }}>
+                        {/* Warning Icon */}
+                        <View style={{ alignItems: 'center', marginBottom: 16 }}>
+                            <Text style={{ fontSize: 48 }}>⚠️</Text>
+                        </View>
+
+                        {/* Title */}
+                        <Text style={{
+                            fontSize: 20,
+                            fontWeight: 'bold',
+                            color: colors.foreground,
+                            textAlign: 'center',
+                            marginBottom: 12,
+                        }}>
+                            Skip Setup?
+                        </Text>
+
+                        {/* Warning Message */}
+                        <Text style={{
+                            fontSize: 15,
+                            color: colors.mutedForeground,
+                            textAlign: 'center',
+                            marginBottom: 24,
+                            lineHeight: 22,
+                        }}>
+                            If you skip, we'll use default values for your profile. Your calorie targets and recommendations may not be accurate.{'\n\n'}You can update these later in Settings.
+                        </Text>
+
+                        {/* Buttons */}
+                        <View style={{ gap: 12 }}>
+                            {/* Continue Button - Green */}
+                            <TouchableOpacity
+                                onPress={() => setShowSkipDialog(false)}
+                                style={{
+                                    backgroundColor: '#22c55e',
+                                    paddingVertical: 14,
+                                    borderRadius: 12,
+                                    alignItems: 'center',
+                                }}
+                            >
+                                <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>
+                                    Continue Setup
+                                </Text>
+                            </TouchableOpacity>
+
+                            {/* Skip Button - Red */}
+                            <TouchableOpacity
+                                onPress={() => {
+                                    setShowSkipDialog(false);
+                                    handleSubmit();
+                                }}
+                                disabled={isLoading}
+                                style={{
+                                    backgroundColor: '#ef4444',
+                                    paddingVertical: 14,
+                                    borderRadius: 12,
+                                    alignItems: 'center',
+                                    opacity: isLoading ? 0.7 : 1,
+                                }}
+                            >
+                                {isLoading ? (
+                                    <ActivityIndicator color="#fff" />
+                                ) : (
+                                    <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>
+                                        Skip for Now
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        </SafeAreaView>
     );
 }

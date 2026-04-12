@@ -89,10 +89,32 @@ async def analyze_meal_image(
         raise Exception(f"Failed to analyze meal image: {str(e)}")
 
 
-async def analyze_meal_text(text: str) -> dict:
-    """Analyze a meal from text description."""
+async def analyze_meal_text(
+    text: str,
+    user_profile: dict = None,
+    calories_consumed: int = 0
+) -> dict:
+    """Analyze a meal from text description with personalized context."""
     try:
-        prompt = MEAL_TEXT_PROMPT.format(text=text)
+        # Default profile values
+        profile = user_profile or {}
+        gender = profile.get("gender", "unknown")
+        age = profile.get("age", 25)
+        height = profile.get("height", 170)
+        weight = profile.get("weight", 70)
+        calorie_target = profile.get("daily_calorie_target", 2000)
+        preferred_tasks = profile.get("preferred_tasks", ["walking"])
+        
+        prompt = MEAL_TEXT_PROMPT.format(
+            text=text,
+            gender=gender,
+            age=age,
+            height=height,
+            weight=weight,
+            calorie_target=calorie_target,
+            calories_consumed=calories_consumed,
+            preferred_tasks=", ".join(preferred_tasks) if preferred_tasks else "walking"
+        )
         response = await text_model.generate_content_async(prompt)
         return _parse_json_response(response.text)
     except Exception as e:

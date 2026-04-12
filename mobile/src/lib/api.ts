@@ -8,6 +8,9 @@ import { router } from 'expo-router';
 // For physical devices, you need to use your computer's actual IP address
 const getApiUrl = () => {
     const envUrl = Constants.expoConfig?.extra?.apiUrl || process.env.EXPO_PUBLIC_API_URL;
+    console.log('[API] expoConfig.extra:', Constants.expoConfig?.extra);
+    console.log('[API] EXPO_PUBLIC_API_URL:', process.env.EXPO_PUBLIC_API_URL);
+    console.log('[API] Final URL:', envUrl);
     if (envUrl) return envUrl;
 
     // Default fallbacks
@@ -18,6 +21,7 @@ const getApiUrl = () => {
 };
 
 const API_URL = getApiUrl();
+console.log('[API] Using API_URL:', API_URL);
 
 export const api = axios.create({
     baseURL: API_URL,
@@ -174,6 +178,58 @@ export const dailyAPI = {
 
     syncGoogleFit: async () => {
         const response = await api.post('/api/daily/sync-google-fit');
+        return response.data;
+    },
+};
+
+export const healthConnectAPI = {
+    getStatus: async () => {
+        const response = await api.get('/api/google-fit/status');
+        return response.data;
+    },
+
+    toggleSync: async (enabled: boolean) => {
+        const response = await api.post('/api/google-fit/toggle', { enabled });
+        return response.data;
+    },
+
+    sync: async (data: {
+        steps: number;
+        calories_burned: number;
+        active_minutes: number;
+        distance_km: number;
+    }) => {
+        const response = await api.post('/api/google-fit/sync', data);
+        return response.data;
+    },
+
+    // Send ALL health data to backend
+    syncFull: async (data: any) => {
+        const response = await api.post('/api/google-fit/sync-full', data);
+        return response.data;
+    },
+
+    getLatest: async () => {
+        const response = await api.get('/api/google-fit/latest');
+        return response.data;
+    },
+};
+
+export const weeklyAPI = {
+    getSummary: async () => {
+        const response = await api.get('/api/weekly/summary');
+        return response.data;
+    },
+
+    cleanup: async () => {
+        const response = await api.post('/api/weekly/cleanup');
+        return response.data;
+    },
+
+    checkCleanup: async (lastCleanupDate: string | null) => {
+        const response = await api.get('/api/weekly/check-cleanup', {
+            params: { last_cleanup_date: lastCleanupDate },
+        });
         return response.data;
     },
 };

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,6 +7,7 @@ import { ArrowLeft, Flame, Trash2, CheckCircle, Zap } from 'lucide-react-native'
 import Markdown from 'react-native-markdown-display';
 import { useThemeStore } from '@/store/useThemeStore';
 import { mealAPI } from '@/lib/api';
+import { useAlert } from '@/components/ui';
 
 interface MealDetail {
     id: string;
@@ -35,6 +36,7 @@ interface BurnTask {
 
 export default function MealDetailScreen() {
     const { colors } = useThemeStore();
+    const { showAlert } = useAlert();
     const { id } = useLocalSearchParams<{ id: string }>();
     const [meal, setMeal] = useState<MealDetail | null>(null);
     const [loading, setLoading] = useState(true);
@@ -61,28 +63,41 @@ export default function MealDetailScreen() {
             setMeal(data);
         } catch (error) {
             console.error('Failed to load meal:', error);
-            Alert.alert('Error', 'Failed to load meal details');
+            showAlert({
+                title: 'Error',
+                message: 'Failed to load meal details.',
+                type: 'error',
+            });
         } finally {
             setLoading(false);
         }
     };
 
     const deleteMeal = () => {
-        Alert.alert('Delete Meal', 'This will remove the meal and its calories. Continue?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: async () => {
-                    try {
-                        await mealAPI.deleteMeal(id!);
-                        router.back();
-                    } catch (error) {
-                        Alert.alert('Error', 'Failed to delete meal');
-                    }
+        showAlert({
+            title: 'Delete Meal',
+            message: 'This will remove the meal and its calories. Continue?',
+            type: 'warning',
+            buttons: [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await mealAPI.deleteMeal(id!);
+                            router.back();
+                        } catch (error) {
+                            showAlert({
+                                title: 'Error',
+                                message: 'Failed to delete meal.',
+                                type: 'error',
+                            });
+                        }
+                    },
                 },
-            },
-        ]);
+            ],
+        });
     };
 
     const completeTask = async (taskId: string) => {
@@ -90,7 +105,11 @@ export default function MealDetailScreen() {
             await mealAPI.updateTask(taskId, 'completed');
             loadMeal();
         } catch (error) {
-            Alert.alert('Error', 'Failed to complete task');
+            showAlert({
+                title: 'Error',
+                message: 'Failed to complete task.',
+                type: 'error',
+            });
         }
     };
 

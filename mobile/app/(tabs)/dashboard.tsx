@@ -1,12 +1,12 @@
-import { useState, useCallback } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Modal, ActivityIndicator, Dimensions } from 'react-native';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Modal, ActivityIndicator, Dimensions, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
     Trash2, CheckCircle, X, Zap, ChevronRight, TrendingUp, Target, AlertCircle,
     Footprints, Timer, Dumbbell, Bike, PersonStanding, Heart, Flame,
     CircleCheck, User, Users,
-    Droplets
+    Droplets, RefreshCw
 } from 'lucide-react-native';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop, Rect, Path, G } from 'react-native-svg';
 import Markdown from 'react-native-markdown-display';
@@ -15,10 +15,16 @@ import { useStore } from '@/store/useStore';
 import { useThemeStore } from '@/store/useThemeStore';
 import { dailyAPI, mealAPI } from '@/lib/api';
 import { formatCalories } from '@/lib/utils';
+import Confetti from '@/components/Confetti';
+import SmartNotifications from '@/components/SmartNotifications';
+import { Platform } from 'react-native';
+import { performSync, initializeHealthConnect } from '@/lib/healthConnect';
+import { useAlert } from '@/components/ui';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-// Avatar component using SVG - generates unique avatars based on user data
+// Modern Avatar component - clean gradient with initials
 const Avatar = ({
     gender,
     age,
@@ -30,93 +36,260 @@ const Avatar = ({
     size?: number;
     name?: string;
 }) => {
-    // Generate colors based on name/gender
-    const colors = [
-        ['#FF6B6B', '#FF8E8E'], // Red
-        ['#4ECDC4', '#7EDDD6'], // Teal
-        ['#45B7D1', '#6BC5D8'], // Blue
-        ['#96CEB4', '#B3DCC7'], // Green
-        ['#DDA0DD', '#E8C1E8'], // Plum
-        ['#F7DC6F', '#FAE89F'], // Yellow
-        ['#BB8FCE', '#D0AEDA'], // Purple
-        ['#85C1E9', '#A9D4EE'], // Light Blue
-        ['#F8B500', '#FAC842'], // Gold
+    // Generate colors based on name
+    const gradientPairs = [
+        ['#22c55e', '#14b8a6'], // Green-Teal
+        ['#3b82f6', '#6366f1'], // Blue-Indigo
+        ['#8b5cf6', '#a855f7'], // Purple
+        ['#ec4899', '#f43f5e'], // Pink-Rose
+        ['#f59e0b', '#f97316'], // Amber-Orange
+        ['#06b6d4', '#0ea5e9'], // Cyan-Sky
+        ['#10b981', '#059669'], // Emerald
+        ['#6366f1', '#8b5cf6'], // Indigo-Purple
     ];
 
-    const colorIndex = (name?.length || 0) % colors.length;
-    const [bgColor, accentColor] = colors[colorIndex];
+    const colorIndex = (name?.length || 0) % gradientPairs.length;
+    const [color1, color2] = gradientPairs[colorIndex];
 
-    // Determine avatar style based on gender
-    const isMale = gender === 'male';
-    const isFemale = gender === 'female';
+    // Get initials from email/name
+    const getInitials = () => {
+        if (!name) return '?';
+        const parts = name.split('@')[0].split(/[._-]/);
+        if (parts.length >= 2) {
+            return (parts[0][0] + parts[1][0]).toUpperCase();
+        }
+        return name.slice(0, 2).toUpperCase();
+    };
+
+    const initials = getInitials();
+    const fontSize = size * 0.4;
 
     return (
-        <Svg width={size} height={size} viewBox="0 0 100 100">
-            <Defs>
-                <SvgLinearGradient id="avatarGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <Stop offset="0%" stopColor={bgColor} />
-                    <Stop offset="100%" stopColor={accentColor} />
-                </SvgLinearGradient>
-            </Defs>
-            {/* Background circle */}
-            <Circle cx="50" cy="50" r="48" fill="url(#avatarGrad)" />
-            {/* Face */}
-            <Circle cx="50" cy="42" r="22" fill="#FFE4C4" />
-            {/* Hair */}
-            {isFemale ? (
-                <Path d="M28 35 Q28 15 50 15 Q72 15 72 35 L72 40 Q60 35 50 35 Q40 35 28 40 Z" fill="#4A3728" />
-            ) : isMale ? (
-                <Path d="M30 32 Q30 18 50 18 Q70 18 70 32 L70 35 Q60 30 50 30 Q40 30 30 35 Z" fill="#3D2914" />
-            ) : (
-                <Path d="M32 34 Q32 20 50 20 Q68 20 68 34 L68 38 Q58 33 50 33 Q42 33 32 38 Z" fill="#5D4E37" />
-            )}
-            {/* Eyes */}
-            <Circle cx="40" cy="42" r="3" fill="#3D3D3D" />
-            <Circle cx="60" cy="42" r="3" fill="#3D3D3D" />
-            {/* Smile */}
-            <Path d="M40 52 Q50 60 60 52" stroke="#3D3D3D" strokeWidth="2" fill="none" strokeLinecap="round" />
-            {/* Body */}
-            <Path d="M30 85 Q30 70 50 68 Q70 70 70 85 L70 100 L30 100 Z" fill={bgColor} />
-        </Svg>
+        <LinearGradient
+            colors={[color1, color2]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+                width: size,
+                height: size,
+                borderRadius: size / 2,
+                alignItems: 'center',
+                justifyContent: 'center',
+            }}
+        >
+            <Text style={{
+                color: '#fff',
+                fontSize,
+                fontWeight: '700',
+                letterSpacing: 0.5,
+            }}>
+                {initials}
+            </Text>
+        </LinearGradient>
     );
 };
 
-// Loading animation component
-const LoadingAnimation = ({ colors }: { colors: any }) => {
+// Skeleton shimmer animation component with smooth animation
+const SkeletonBox = ({
+    width,
+    height,
+    borderRadius = 8,
+    style = {}
+}: {
+    width: number | string;
+    height: number;
+    borderRadius?: number;
+    style?: any;
+}) => {
+    const { colors } = useThemeStore();
+    const shimmerAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        const shimmerLoop = Animated.loop(
+            Animated.sequence([
+                Animated.timing(shimmerAnim, {
+                    toValue: 1,
+                    duration: 1200,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(shimmerAnim, {
+                    toValue: 0,
+                    duration: 1200,
+                    useNativeDriver: true,
+                }),
+            ])
+        );
+        shimmerLoop.start();
+        return () => shimmerLoop.stop();
+    }, [shimmerAnim]);
+
+    const opacity = shimmerAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0.3, 0.7],
+    });
+
     return (
-        <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-            <Svg width={120} height={120} viewBox="0 0 100 100">
-                <Defs>
-                    <SvgLinearGradient id="loadGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <Stop offset="0%" stopColor="#22c55e" />
-                        <Stop offset="100%" stopColor="#16a34a" />
-                    </SvgLinearGradient>
-                </Defs>
-                {/* Animated circles */}
-                <Circle cx="50" cy="50" r="40" stroke="#1f2937" strokeWidth="8" fill="none" />
-                <Circle
-                    cx="50"
-                    cy="50"
-                    r="40"
-                    stroke="url(#loadGrad)"
-                    strokeWidth="8"
-                    fill="none"
-                    strokeDasharray="200"
-                    strokeDashoffset="150"
-                    strokeLinecap="round"
-                />
-                {/* Center icon */}
-                <G transform="translate(35, 35)">
-                    <Path
-                        d="M15 0 L18 10 L30 10 L20 16 L24 28 L15 20 L6 28 L10 16 L0 10 L12 10 Z"
-                        fill="#22c55e"
-                    />
-                </G>
-            </Svg>
-            <Text style={{ color: colors.mutedForeground, marginTop: 16, fontSize: 14 }}>
-                Loading your dashboard...
-            </Text>
-        </View>
+        <Animated.View
+            style={[
+                {
+                    width,
+                    height,
+                    backgroundColor: colors.muted,
+                    borderRadius,
+                    opacity,
+                },
+                style,
+            ]}
+        />
+    );
+};
+
+// Dashboard Skeleton Loading Component
+const DashboardSkeleton = ({ colors }: { colors: any }) => {
+    return (
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }}>
+                {/* Header Skeleton */}
+                <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                        {/* Avatar Skeleton */}
+                        <SkeletonBox width={56} height={56} borderRadius={28} />
+
+                        {/* Greeting Skeleton */}
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                            <SkeletonBox width={150} height={22} style={{ marginBottom: 8 }} />
+                            <SkeletonBox width={180} height={14} />
+                        </View>
+
+                        {/* Online Status Skeleton */}
+                        <SkeletonBox width={70} height={28} borderRadius={14} />
+                    </View>
+
+                    {/* Calorie Progress Card Skeleton */}
+                    <View style={{ backgroundColor: colors.secondary, borderRadius: 20, padding: 20 }}>
+                        {/* Title */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                            <SkeletonBox width={18} height={18} borderRadius={9} />
+                            <SkeletonBox width={150} height={16} style={{ marginLeft: 8 }} />
+                        </View>
+
+                        {/* Circular Progress Skeleton */}
+                        <View style={{ alignItems: 'center' }}>
+                            <SkeletonBox width={160} height={160} borderRadius={80} />
+                        </View>
+
+                        {/* Stats Cards Skeleton */}
+                        <View style={{ flexDirection: 'row', marginTop: 20, gap: 8 }}>
+                            <View style={{ flex: 1, backgroundColor: colors.muted, borderRadius: 12, padding: 12, alignItems: 'center' }}>
+                                <SkeletonBox width={18} height={18} borderRadius={9} style={{ marginBottom: 4 }} />
+                                <SkeletonBox width={50} height={20} style={{ marginBottom: 4 }} />
+                                <SkeletonBox width={40} height={12} />
+                            </View>
+                            <View style={{ flex: 1, backgroundColor: colors.muted, borderRadius: 12, padding: 12, alignItems: 'center' }}>
+                                <SkeletonBox width={18} height={18} borderRadius={9} style={{ marginBottom: 4 }} />
+                                <SkeletonBox width={50} height={20} style={{ marginBottom: 4 }} />
+                                <SkeletonBox width={40} height={12} />
+                            </View>
+                            <View style={{ flex: 1, backgroundColor: colors.muted, borderRadius: 12, padding: 12, alignItems: 'center' }}>
+                                <SkeletonBox width={18} height={18} borderRadius={9} style={{ marginBottom: 4 }} />
+                                <SkeletonBox width={50} height={20} style={{ marginBottom: 4 }} />
+                                <SkeletonBox width={40} height={12} />
+                            </View>
+                        </View>
+                    </View>
+                </View>
+
+                {/* Activity Stats Skeleton */}
+                <View style={{ marginTop: 20 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 12 }}>
+                        <SkeletonBox width={18} height={18} borderRadius={9} />
+                        <SkeletonBox width={120} height={16} style={{ marginLeft: 8 }} />
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
+                        {[1, 2, 3, 4].map((i) => (
+                            <View key={i} style={{ backgroundColor: colors.secondary, borderRadius: 16, padding: 16, width: 120, marginRight: 12, alignItems: 'center' }}>
+                                <SkeletonBox width={44} height={44} borderRadius={22} style={{ marginBottom: 10 }} />
+                                <SkeletonBox width={50} height={18} style={{ marginBottom: 4 }} />
+                                <SkeletonBox width={40} height={12} />
+                            </View>
+                        ))}
+                    </ScrollView>
+                </View>
+
+                {/* Tasks Skeleton */}
+                <View style={{ marginTop: 20 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 12 }}>
+                        <SkeletonBox width={18} height={18} borderRadius={9} />
+                        <SkeletonBox width={100} height={16} style={{ marginLeft: 8 }} />
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
+                        {[1, 2, 3].map((i) => (
+                            <View key={i} style={{ backgroundColor: colors.secondary, borderRadius: 16, padding: 14, width: 150, marginRight: 12 }}>
+                                <SkeletonBox width={100} height={16} style={{ marginBottom: 8 }} />
+                                <SkeletonBox width={80} height={12} style={{ marginBottom: 8 }} />
+                                <SkeletonBox width={60} height={14} style={{ marginBottom: 8 }} />
+                                <SkeletonBox width={'100%' as any} height={28} borderRadius={8} />
+                            </View>
+                        ))}
+                    </ScrollView>
+                </View>
+
+                {/* Macros Skeleton */}
+                <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                        <SkeletonBox width={18} height={18} borderRadius={9} />
+                        <SkeletonBox width={140} height={16} style={{ marginLeft: 8 }} />
+                    </View>
+                    <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+                        <View style={{ flex: 1, marginHorizontal: 4, backgroundColor: colors.secondary, borderRadius: 12, padding: 12 }}>
+                            <SkeletonBox width={60} height={14} style={{ marginBottom: 8 }} />
+                            <SkeletonBox width={'100%' as any} height={10} borderRadius={5} style={{ marginBottom: 6 }} />
+                            <SkeletonBox width={40} height={14} />
+                        </View>
+                        <View style={{ flex: 1, marginHorizontal: 4, backgroundColor: colors.secondary, borderRadius: 12, padding: 12 }}>
+                            <SkeletonBox width={50} height={14} style={{ marginBottom: 8 }} />
+                            <SkeletonBox width={'100%' as any} height={10} borderRadius={5} style={{ marginBottom: 6 }} />
+                            <SkeletonBox width={40} height={14} />
+                        </View>
+                    </View>
+                    <View style={{ flexDirection: 'row' }}>
+                        <View style={{ flex: 1, marginHorizontal: 4, backgroundColor: colors.secondary, borderRadius: 12, padding: 12 }}>
+                            <SkeletonBox width={35} height={14} style={{ marginBottom: 8 }} />
+                            <SkeletonBox width={'100%' as any} height={10} borderRadius={5} style={{ marginBottom: 6 }} />
+                            <SkeletonBox width={40} height={14} />
+                        </View>
+                        <View style={{ flex: 1, marginHorizontal: 4, backgroundColor: colors.secondary, borderRadius: 12, padding: 12 }}>
+                            <SkeletonBox width={50} height={14} style={{ marginBottom: 8 }} />
+                            <SkeletonBox width={'100%' as any} height={10} borderRadius={5} style={{ marginBottom: 6 }} />
+                            <SkeletonBox width={40} height={14} />
+                        </View>
+                    </View>
+                </View>
+
+                {/* Weekly Overview Skeleton */}
+                <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+                    <View style={{ backgroundColor: colors.secondary, borderRadius: 16, padding: 16 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                            <SkeletonBox width={18} height={18} borderRadius={9} />
+                            <SkeletonBox width={120} height={16} style={{ marginLeft: 8 }} />
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 100, gap: 6 }}>
+                            {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                                <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                                    <SkeletonBox width={'80%' as any} height={20 + Math.random() * 60} borderRadius={4} />
+                                    <SkeletonBox width={25} height={10} style={{ marginTop: 6 }} />
+                                </View>
+                            ))}
+                        </View>
+                    </View>
+                </View>
+
+                {/* Log Meal Button Skeleton */}
+                <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+                    <SkeletonBox width={'100%' as any} height={52} borderRadius={16} />
+                </View>
+            </ScrollView>
+        </SafeAreaView>
     );
 };
 
@@ -151,70 +324,487 @@ interface MealItem {
     created_at: string;
 }
 
-// Enhanced Circular progress component
+// Enhanced 3-Ring Animated Circular Progress Component
 const CircularProgress = ({
     consumed,
     target,
     burned,
+    restingCal = 0,
+    exerciseCal = 0,
     size,
     strokeWidth,
-    colors
+    colors,
 }: {
     consumed: number;
     target: number;
     burned: number;
+    restingCal?: number;
+    exerciseCal?: number;
     size: number;
     strokeWidth: number;
     colors: any;
 }) => {
-    const radius = (size - strokeWidth) / 2;
-    const circumference = radius * 2 * Math.PI;
+    const [showDetail, setShowDetail] = useState(false);
+
+    // State for animated stroke offsets
+    const [animatedOuter, setAnimatedOuter] = useState(1);
+    const [animatedMiddle, setAnimatedMiddle] = useState(1);
+    const [animatedInner, setAnimatedInner] = useState(1);
+
+    // Animation refs for glow effect
+    const glowAnim = useRef(new Animated.Value(0.3)).current;
+
+    // Thicker rings closer together
+    const ringWidth = 10;
+    const gap = 2;
+
+    const outerRadius = (size - ringWidth) / 2;
+    const middleRadius = outerRadius - ringWidth - gap;
+    const innerRadius = middleRadius - ringWidth - gap;
+
+    const outerCircumference = outerRadius * 2 * Math.PI;
+    const middleCircumference = middleRadius * 2 * Math.PI;
+    const innerCircumference = innerRadius * 2 * Math.PI;
+
+    // Percentages for all 3 rings
+    const eatenPercent = Math.min((consumed / Math.max(target, 1)) * 100, 100);
+    const burnedPercent = Math.min((burned / Math.max(target, 1)) * 100, 100);
+    const remaining = Math.max(target - consumed + burned, 0);
+    const remainingPercent = Math.min((remaining / Math.max(target, 1)) * 100, 100);
+
+    // Animation for ring fill + subtle pulse
+    useEffect(() => {
+        // Reset to full circle (empty)
+        setAnimatedOuter(1);
+        setAnimatedMiddle(1);
+        setAnimatedInner(1);
+
+        // Calculate target percentages (inverted for strokeDashoffset)
+        const outerTarget = 1 - (eatenPercent / 100);
+        const middleTarget = 1 - (burnedPercent / 100);
+        const innerTarget = 1 - (remainingPercent / 100);
+
+        // Animate with timing
+        const outerAnimValue = new Animated.Value(1);
+        const middleAnimValue = new Animated.Value(1);
+        const innerAnimValue = new Animated.Value(1);
+
+        // Add listeners to update state
+        outerAnimValue.addListener(({ value }) => setAnimatedOuter(value));
+        middleAnimValue.addListener(({ value }) => setAnimatedMiddle(value));
+        innerAnimValue.addListener(({ value }) => setAnimatedInner(value));
+
+        // Sequential fill animation - slower timing
+        Animated.stagger(400, [
+            Animated.timing(outerAnimValue, {
+                toValue: outerTarget,
+                duration: 2200,
+                useNativeDriver: false,
+            }),
+            Animated.timing(middleAnimValue, {
+                toValue: middleTarget,
+                duration: 2000,
+                useNativeDriver: false,
+            }),
+            Animated.timing(innerAnimValue, {
+                toValue: innerTarget,
+                duration: 1800,
+                useNativeDriver: false,
+            }),
+        ]).start();
+
+        // Continuous glow pulse animation
+        const glow = Animated.loop(
+            Animated.sequence([
+                Animated.timing(glowAnim, {
+                    toValue: 0.8,
+                    duration: 1500,
+                    useNativeDriver: false,
+                }),
+                Animated.timing(glowAnim, {
+                    toValue: 0.3,
+                    duration: 1500,
+                    useNativeDriver: false,
+                }),
+            ])
+        );
+        glow.start();
+
+        return () => {
+            outerAnimValue.removeAllListeners();
+            middleAnimValue.removeAllListeners();
+            innerAnimValue.removeAllListeners();
+            glow.stop();
+        };
+    }, [consumed, burned, target]);
+
+    // Calculate stroke offsets from animated state
+    const outerOffset = animatedOuter * outerCircumference;
+    const middleOffset = animatedMiddle * middleCircumference;
+    const innerOffset = animatedInner * innerCircumference;
+
     const netCalories = consumed - burned;
-    const percentage = Math.min((netCalories / target) * 100, 100);
-    const strokeDashoffset = circumference - (Math.max(percentage, 0) / 100) * circumference;
     const isOver = netCalories > target;
 
+    // Calculate position for percentage labels on the ring
+    const getPercentPosition = (percent: number, radius: number) => {
+        const displayPercent = Math.max(percent, 5);
+        const angle = ((displayPercent / 100) * 360 - 90) * (Math.PI / 180);
+        return {
+            x: size / 2 + radius * Math.cos(angle),
+            y: size / 2 + radius * Math.sin(angle),
+        };
+    };
+
+    // Animated Circle component using native SVG
+    const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
     return (
-        <View style={{ alignItems: 'center' }}>
-            <View style={{ position: 'relative', width: size, height: size }}>
-                <Svg width={size} height={size}>
-                    <Defs>
-                        <SvgLinearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <Stop offset="0%" stopColor={isOver ? '#f59e0b' : '#22c55e'} />
-                            <Stop offset="100%" stopColor={isOver ? '#ea580c' : '#16a34a'} />
-                        </SvgLinearGradient>
-                    </Defs>
-                    <Circle
-                        cx={size / 2}
-                        cy={size / 2}
-                        r={radius}
-                        stroke="#2a3a2a"
-                        strokeWidth={strokeWidth}
-                        fill="transparent"
-                    />
-                    <Circle
-                        cx={size / 2}
-                        cy={size / 2}
-                        r={radius}
-                        stroke="url(#progressGradient)"
-                        strokeWidth={strokeWidth}
-                        fill="transparent"
-                        strokeDasharray={circumference}
-                        strokeDashoffset={strokeDashoffset}
-                        strokeLinecap="round"
-                        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-                    />
-                </Svg>
-                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 28, fontWeight: 'bold', color: isOver ? '#f59e0b' : '#22c55e' }}>
-                        {formatCalories(netCalories)}
-                    </Text>
-                    <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 2 }}>
-                        Net Calories
-                    </Text>
+        <>
+            <TouchableOpacity
+                onPress={() => setShowDetail(true)}
+                activeOpacity={0.8}
+                style={{ alignItems: 'center' }}
+            >
+                {/* Glow effect container */}
+                <Animated.View style={{
+                    position: 'relative',
+                    width: size,
+                    height: size,
+                    shadowColor: '#14b8a6',
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: glowAnim,
+                    shadowRadius: 15,
+                    elevation: 8,
+                }}>
+                    <Svg width={size} height={size}>
+                        <Defs>
+                            {/* Eaten Gradient - Teal to Cyan */}
+                            <SvgLinearGradient id="eatenGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <Stop offset="0%" stopColor="#06b6d4" />
+                                <Stop offset="50%" stopColor="#14b8a6" />
+                                <Stop offset="100%" stopColor="#0d9488" />
+                            </SvgLinearGradient>
+                            {/* Burned Gradient - Orange to Red */}
+                            <SvgLinearGradient id="burnedGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <Stop offset="0%" stopColor="#fbbf24" />
+                                <Stop offset="50%" stopColor="#f59e0b" />
+                                <Stop offset="100%" stopColor="#ea580c" />
+                            </SvgLinearGradient>
+                            {/* Remaining Gradient - Green to Emerald */}
+                            <SvgLinearGradient id="remainingGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <Stop offset="0%" stopColor="#4ade80" />
+                                <Stop offset="50%" stopColor="#22c55e" />
+                                <Stop offset="100%" stopColor="#16a34a" />
+                            </SvgLinearGradient>
+                        </Defs>
+
+                        {/* Background rings - very light/transparent */}
+                        <Circle
+                            cx={size / 2}
+                            cy={size / 2}
+                            r={outerRadius}
+                            stroke="rgba(150,150,150,0.1)"
+                            strokeWidth={ringWidth}
+                            fill="transparent"
+                        />
+                        <Circle
+                            cx={size / 2}
+                            cy={size / 2}
+                            r={middleRadius}
+                            stroke="rgba(150,150,150,0.1)"
+                            strokeWidth={ringWidth}
+                            fill="transparent"
+                        />
+                        <Circle
+                            cx={size / 2}
+                            cy={size / 2}
+                            r={innerRadius}
+                            stroke="rgba(150,150,150,0.1)"
+                            strokeWidth={ringWidth}
+                            fill="transparent"
+                        />
+
+                        {/* Outer Ring - EATEN with Gradient */}
+                        <Circle
+                            cx={size / 2}
+                            cy={size / 2}
+                            r={outerRadius}
+                            stroke="url(#eatenGradient)"
+                            strokeWidth={ringWidth}
+                            fill="transparent"
+                            strokeDasharray={outerCircumference}
+                            strokeDashoffset={outerOffset}
+                            strokeLinecap="round"
+                            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+                        />
+
+                        {/* Middle Ring - BURNED with Gradient */}
+                        <Circle
+                            cx={size / 2}
+                            cy={size / 2}
+                            r={middleRadius}
+                            stroke="url(#burnedGradient)"
+                            strokeWidth={ringWidth}
+                            fill="transparent"
+                            strokeDasharray={middleCircumference}
+                            strokeDashoffset={middleOffset}
+                            strokeLinecap="round"
+                            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+                        />
+
+                        {/* Inner Ring - REMAINING with Gradient */}
+                        <Circle
+                            cx={size / 2}
+                            cy={size / 2}
+                            r={innerRadius}
+                            stroke="url(#remainingGradient)"
+                            strokeWidth={ringWidth}
+                            fill="transparent"
+                            strokeDasharray={innerCircumference}
+                            strokeDashoffset={innerOffset}
+                            strokeLinecap="round"
+                            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+                        />
+                    </Svg>
+
+                    {/* Percentage label for Eaten (outer) */}
+                    <View style={{
+                        position: 'absolute',
+                        left: getPercentPosition(eatenPercent, outerRadius).x - 16,
+                        top: getPercentPosition(eatenPercent, outerRadius).y - 9,
+                        backgroundColor: '#14b8a6',
+                        paddingHorizontal: 4,
+                        paddingVertical: 1,
+                        borderRadius: 4,
+                    }}>
+                        <Text style={{ color: '#fff', fontSize: 8, fontWeight: '700' }}>
+                            {Math.round(eatenPercent)}%
+                        </Text>
+                    </View>
+
+                    {/* Percentage label for Burned (middle) */}
+                    <View style={{
+                        position: 'absolute',
+                        left: getPercentPosition(burnedPercent, middleRadius).x - 16,
+                        top: getPercentPosition(burnedPercent, middleRadius).y - 9,
+                        backgroundColor: '#f59e0b',
+                        paddingHorizontal: 4,
+                        paddingVertical: 1,
+                        borderRadius: 4,
+                    }}>
+                        <Text style={{ color: '#fff', fontSize: 8, fontWeight: '700' }}>
+                            {Math.round(burnedPercent)}%
+                        </Text>
+                    </View>
+
+                    {/* Percentage label for Remaining (inner) */}
+                    <View style={{
+                        position: 'absolute',
+                        left: getPercentPosition(remainingPercent, innerRadius).x - 16,
+                        top: getPercentPosition(remainingPercent, innerRadius).y - 9,
+                        backgroundColor: '#22c55e',
+                        paddingHorizontal: 4,
+                        paddingVertical: 1,
+                        borderRadius: 4,
+                    }}>
+                        <Text style={{ color: '#fff', fontSize: 8, fontWeight: '700' }}>
+                            {Math.round(remainingPercent)}%
+                        </Text>
+                    </View>
+
+                    {/* Center Content - Remaining Goal + Tap for details */}
+                    <View style={{
+                        position: 'absolute',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                    }}>
+                        <Text style={{
+                            color: isOver ? '#f59e0b' : '#22c55e',
+                            fontSize: 22,
+                            fontWeight: 'bold'
+                        }}>
+                            {formatCalories(remaining)}
+                        </Text>
+                        <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 2 }}>Cal left</Text>
+                        <Text style={{ color: colors.primary, fontSize: 10, marginTop: 4 }}>
+                            Tap for details
+                        </Text>
+                    </View>
+                </Animated.View>
+
+                {/* Legend OUTSIDE the circle */}
+                <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 14, marginTop: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#14b8a6', marginRight: 3 }} />
+                        <Text style={{ color: colors.foreground, fontSize: 10 }}>Intake</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#f59e0b', marginRight: 3 }} />
+                        <Text style={{ color: colors.foreground, fontSize: 10 }}>Burned</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e', marginRight: 3 }} />
+                        <Text style={{ color: colors.foreground, fontSize: 10 }}>Goal Left</Text>
+                    </View>
                 </View>
-            </View>
-        </View>
+            </TouchableOpacity>
+
+            {/* Detail Modal */}
+            <Modal
+                visible={showDetail}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowDetail(false)}
+            >
+                <TouchableOpacity
+                    style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' }}
+                    activeOpacity={1}
+                    onPress={() => setShowDetail(false)}
+                >
+                    <View style={{
+                        backgroundColor: colors.card,
+                        borderRadius: 24,
+                        padding: 24,
+                        width: SCREEN_WIDTH - 48,
+                        alignItems: 'center'
+                    }}>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.foreground, marginBottom: 20 }}>
+                            Today's Calorie Breakdown
+                        </Text>
+
+                        {/* Intake */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, width: '100%' }}>
+                            <View style={{
+                                width: 40, height: 40, borderRadius: 20,
+                                backgroundColor: '#14b8a6',
+                                justifyContent: 'center', alignItems: 'center'
+                            }}>
+                                <Flame size={20} color="#fff" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 12 }}>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Calorie Intake</Text>
+                                <Text style={{ color: colors.foreground, fontSize: 20, fontWeight: 'bold' }}>{formatCalories(consumed)} Cal</Text>
+                            </View>
+                            <View style={{ alignItems: 'flex-end' }}>
+                                <Text style={{ color: '#14b8a6', fontSize: 16, fontWeight: '600' }}>{Math.round(eatenPercent)}%</Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>of goal</Text>
+                            </View>
+                        </View>
+
+                        {/* Burned - with BMR breakdown */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, width: '100%' }}>
+                            <View style={{
+                                width: 40, height: 40, borderRadius: 20,
+                                backgroundColor: '#f59e0b',
+                                justifyContent: 'center', alignItems: 'center'
+                            }}>
+                                <Zap size={20} color="#fff" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 12 }}>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Calories Burned</Text>
+                                <Text style={{ color: colors.foreground, fontSize: 20, fontWeight: 'bold' }}>{formatCalories(burned)} Cal</Text>
+                            </View>
+                            <View style={{ alignItems: 'flex-end' }}>
+                                <Text style={{ color: '#f59e0b', fontSize: 16, fontWeight: '600' }}>{Math.round(burnedPercent)}%</Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>of goal</Text>
+                            </View>
+                        </View>
+
+                        {/* BMR vs Exercise mini-breakdown */}
+                        <View style={{
+                            width: '100%',
+                            backgroundColor: colors.muted,
+                            borderRadius: 12,
+                            padding: 10,
+                            marginBottom: 16,
+                            marginLeft: 52,
+                            flexDirection: 'row',
+                            gap: 16,
+                        }}>
+                            <View style={{ alignItems: 'center', flex: 1 }}>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>🏠 Resting</Text>
+                                <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: '600' }}>
+                                    {formatCalories(restingCal)} Cal
+                                </Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 9 }}>breathing, digestion</Text>
+                            </View>
+                            <View style={{ width: 1, backgroundColor: colors.border }} />
+                            <View style={{ alignItems: 'center', flex: 1 }}>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>🏃 Exercise</Text>
+                                <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: '600' }}>{formatCalories(exerciseCal)} Cal</Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 9 }}>walking, workouts</Text>
+                            </View>
+                        </View>
+
+                        {/* Goal Left */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20, width: '100%' }}>
+                            <View style={{
+                                width: 40, height: 40, borderRadius: 20,
+                                backgroundColor: '#22c55e',
+                                justifyContent: 'center', alignItems: 'center'
+                            }}>
+                                <Target size={20} color="#fff" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 12 }}>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Goal Left</Text>
+                                <Text style={{ color: colors.foreground, fontSize: 20, fontWeight: 'bold' }}>{formatCalories(remaining)} Cal</Text>
+                            </View>
+                            <View style={{ alignItems: 'flex-end' }}>
+                                <Text style={{ color: '#22c55e', fontSize: 16, fontWeight: '600' }}>{Math.round((remaining / target) * 100)}%</Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 10 }}>left</Text>
+                            </View>
+                        </View>
+
+                        {/* Divider */}
+                        <View style={{ width: '100%', height: 1, backgroundColor: colors.border, marginBottom: 16 }} />
+
+                        {/* Summary */}
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+                            <View style={{ alignItems: 'center' }}>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Daily Goal</Text>
+                                <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: 'bold' }}>{formatCalories(target)}</Text>
+                            </View>
+                            <View style={{ alignItems: 'center' }}>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Net</Text>
+                                <Text style={{
+                                    color: isOver ? '#f59e0b' : '#22c55e',
+                                    fontSize: 18,
+                                    fontWeight: 'bold'
+                                }}>
+                                    {formatCalories(netCalories)}
+                                </Text>
+                            </View>
+                            <View style={{ alignItems: 'center' }}>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Status</Text>
+                                <Text style={{
+                                    color: isOver ? '#f59e0b' : '#22c55e',
+                                    fontSize: 14,
+                                    fontWeight: '600'
+                                }}>
+                                    {isOver ? 'Over' : 'On Track'}
+                                </Text>
+                            </View>
+                        </View>
+
+                        {/* Close Button */}
+                        <TouchableOpacity
+                            onPress={() => setShowDetail(false)}
+                            style={{
+                                marginTop: 20,
+                                backgroundColor: colors.primary,
+                                paddingHorizontal: 32,
+                                paddingVertical: 12,
+                                borderRadius: 12
+                            }}
+                        >
+                            <Text style={{ color: '#fff', fontWeight: '600' }}>Got it!</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+        </>
     );
 };
 
@@ -415,6 +1005,7 @@ const ProgressBar = ({
 export default function DashboardScreen() {
     const { user, profile, dailyLog, setDailyLog, isOnline } = useStore();
     const { colors } = useThemeStore();
+    const { showAlert } = useAlert();
     const [refreshing, setRefreshing] = useState(false);
     const [tasks, setTasks] = useState<BurnTask[]>([]);
     const [meals, setMeals] = useState<MealItem[]>([]);
@@ -422,6 +1013,7 @@ export default function DashboardScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [taskActionLoading, setTaskActionLoading] = useState<string | null>(null);
     const [weeklyData, setWeeklyData] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+    const [isSyncing, setIsSyncing] = useState(false);
 
     const fetchDailyData = async () => {
         try {
@@ -459,6 +1051,52 @@ export default function DashboardScreen() {
             setMeals(todayMeals);
         } catch (error) {
             console.error('Failed to fetch meals:', error);
+        }
+    };
+
+    // Health Connect Sync
+    const handleHealthSync = async () => {
+        if (Platform.OS !== 'android') {
+            showAlert({
+                title: 'Not Supported',
+                message: 'Health Connect is only available on Android.',
+                type: 'warning',
+            });
+            return;
+        }
+
+        setIsSyncing(true);
+        try {
+            // Initialize first
+            await initializeHealthConnect();
+
+            const result = await performSync();
+
+            if (result.success && result.data) {
+                // Refresh daily data to show updated steps/calories
+                await fetchDailyData();
+
+                showAlert({
+                    title: 'Sync Complete',
+                    message: `Synced ${result.data.steps.toLocaleString()} steps, ${result.data.caloriesBurned} cal burned`,
+                    type: 'success',
+                });
+            } else {
+                showAlert({
+                    title: 'Sync Failed',
+                    message: result.error || 'Unable to sync health data.',
+                    type: 'error',
+                });
+            }
+        } catch (error) {
+            console.error('Health sync failed:', error);
+            showAlert({
+                title: 'Sync Failed',
+                message: 'An error occurred during sync.',
+                type: 'error',
+            });
+        } finally {
+            setIsSyncing(false);
         }
     };
 
@@ -547,6 +1185,63 @@ export default function DashboardScreen() {
     const overCalories = Math.max(netCalories - calorieTarget, 0);
     const isOverTarget = netCalories > calorieTarget;
 
+    // Extract active vs total calories from google_fit_data for BMR breakdown
+    const googleFitData = dailyLog?.google_fit_data as any;
+    const activeCalories = googleFitData?.active_calories || 0;
+    const totalCaloriesBurned = caloriesOut;
+    const restingCalories = Math.max(totalCaloriesBurned - activeCalories, 0);
+
+    // Check if user met their goal (within 50 cal tolerance)
+    const goalMet = netCalories >= calorieTarget - 50 && netCalories <= calorieTarget + 50 && caloriesIn > 0;
+
+    // Confetti once-per-day tracking
+    const [confettiShown, setConfettiShown] = useState(false);
+    const showConfetti = goalMet && !confettiShown;
+
+    useEffect(() => {
+        const todayKey = `confetti_shown_${new Date().toISOString().split('T')[0]}`;
+        AsyncStorage.getItem(todayKey).then((val) => {
+            if (val === 'true') setConfettiShown(true);
+        });
+    }, []);
+
+    useEffect(() => {
+        if (goalMet && !confettiShown) {
+            const todayKey = `confetti_shown_${new Date().toISOString().split('T')[0]}`;
+            AsyncStorage.setItem(todayKey, 'true');
+            setConfettiShown(true);
+        }
+    }, [goalMet]);
+
+    // Stat card info popup
+    const [statCardInfo, setStatCardInfo] = useState<{
+        visible: boolean;
+        title: string;
+        description: string;
+        color: string;
+    }>({ visible: false, title: '', description: '', color: '' });
+
+    const showStatCardInfo = (type: 'intake' | 'burned' | 'goal_left') => {
+        const infos = {
+            intake: {
+                title: 'Calorie Intake',
+                description: `Total calories from food & drinks today — ${formatCalories(caloriesIn)} Cal so far. Log meals to keep this accurate!`,
+                color: '#22c55e',
+            },
+            burned: {
+                title: 'Calories Burned',
+                description: `Your body burned ${formatCalories(caloriesOut)} Cal today — even at rest!\n\n🏠 Resting: ${formatCalories(restingCalories)} Cal (breathing, digestion)\n🏃 Exercise: ${formatCalories(activeCalories)} Cal (walking, workouts)`,
+                color: '#f59e0b',
+            },
+            goal_left: {
+                title: 'Calories You Can Still Eat',
+                description: `You can eat ${formatCalories(remaining)} Cal more and stay within your ${formatCalories(calorieTarget)} Cal goal.`,
+                color: isOverTarget ? '#d97706' : colors.primary,
+            },
+        };
+        setStatCardInfo({ visible: true, ...infos[type] });
+    };
+
     // Calculate macros from today's meals
     const totalMacros = meals.reduce((acc, meal) => ({
         protein: acc.protein + (meal.macros?.p || 0),
@@ -577,29 +1272,27 @@ export default function DashboardScreen() {
     };
 
     if (isLoading) {
-        return (
-            <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
-                <LoadingAnimation colors={colors} />
-            </SafeAreaView>
-        );
+        return <DashboardSkeleton colors={colors} />;
     }
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+            {/* Confetti celebration when goal is met - once per day */}
+            <Confetti visible={showConfetti} />
             <ScrollView
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingBottom: 24 }}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
             >
-                {/* Header with Avatar */}
-                <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                {/* Header with Avatar - Compact */}
+                <View style={{ paddingHorizontal: 16, paddingTop: 4 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
                         {/* Avatar */}
                         <TouchableOpacity
                             onPress={() => router.push('/(tabs)/profile')}
                             style={{
-                                marginRight: 12,
-                                borderRadius: 28,
+                                marginRight: 10,
+                                borderRadius: 20,
                                 overflow: 'hidden',
                                 borderWidth: 2,
                                 borderColor: colors.primary,
@@ -608,18 +1301,18 @@ export default function DashboardScreen() {
                             <Avatar
                                 gender={profile?.gender}
                                 age={profile?.age}
-                                size={56}
+                                size={40}
                                 name={user?.email || ''}
                             />
                         </TouchableOpacity>
 
                         {/* Greeting */}
                         <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 22, fontWeight: 'bold', color: colors.foreground }}>
-                                Hi, {user?.email?.split('@')[0] || 'there'}!
+                            <Text style={{ fontSize: 17, fontWeight: 'bold', color: colors.foreground }}>
+                                {user?.email?.split('@')[0] || 'Welcome'}!
                             </Text>
-                            <Text style={{ color: colors.mutedForeground, fontSize: 13, marginTop: 2 }}>
-                                Let's track your progress today
+                            <Text style={{ color: colors.mutedForeground, fontSize: 11, marginTop: 1 }}>
+                                Track your progress
                             </Text>
                         </View>
 
@@ -643,7 +1336,50 @@ export default function DashboardScreen() {
                                 {isOnline ? 'Online' : 'Offline'}
                             </Text>
                         </View>
+
+                        {/* Health Sync Button */}
+                        {Platform.OS === 'android' && (
+                            <TouchableOpacity
+                                onPress={handleHealthSync}
+                                disabled={isSyncing}
+                                style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    backgroundColor: colors.primary,
+                                    paddingHorizontal: 12,
+                                    paddingVertical: 8,
+                                    borderRadius: 16,
+                                    marginLeft: 8,
+                                    opacity: isSyncing ? 0.7 : 1,
+                                }}
+                            >
+                                {isSyncing ? (
+                                    <ActivityIndicator size="small" color="#fff" />
+                                ) : (
+                                    <RefreshCw size={14} color="#fff" />
+                                )}
+                                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600', marginLeft: 4 }}>
+                                    Sync
+                                </Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
+
+                    {/* Smart Notifications */}
+                    <SmartNotifications
+                        data={{
+                            caloriesIn,
+                            caloriesOut,
+                            calorieTarget,
+                            steps: totalSteps,
+                            waterMl,
+                            waterTarget,
+                            userName: user?.email || '',
+                            activeCalories,
+                            totalCalories: totalCaloriesBurned,
+                        }}
+                        colors={colors}
+                    />
 
                     {/* Calorie Progress Card */}
                     <View style={{ backgroundColor: colors.secondary, borderRadius: 20, padding: 20 }}>
@@ -659,51 +1395,67 @@ export default function DashboardScreen() {
                             consumed={caloriesIn}
                             target={calorieTarget}
                             burned={caloriesOut}
+                            restingCal={restingCalories}
+                            exerciseCal={activeCalories}
                             size={160}
                             strokeWidth={14}
                             colors={colors}
                         />
 
-                        {/* Stats Cards */}
+                        {/* Stats Cards - Clickable with descriptions */}
                         <View style={{ flexDirection: 'row', marginTop: 20, gap: 8 }}>
-                            {/* Eaten */}
-                            <View style={{
-                                flex: 1,
-                                backgroundColor: colors.muted,
-                                borderRadius: 12,
-                                padding: 12,
-                                alignItems: 'center',
-                            }}>
+                            {/* Intake */}
+                            <TouchableOpacity
+                                onPress={() => showStatCardInfo('intake')}
+                                activeOpacity={0.7}
+                                style={{
+                                    flex: 1,
+                                    backgroundColor: colors.muted,
+                                    borderRadius: 12,
+                                    padding: 12,
+                                    alignItems: 'center',
+                                }}
+                            >
                                 <Zap size={18} color="#22c55e" style={{ marginBottom: 4 }} />
                                 <Text style={{ color: colors.foreground, fontWeight: '700', fontSize: 18 }}>
                                     {formatCalories(caloriesIn)}
                                 </Text>
-                                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Eaten</Text>
-                            </View>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 9, marginTop: 1 }}>Cal</Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Intake</Text>
+                            </TouchableOpacity>
 
                             {/* Burned */}
-                            <View style={{
-                                flex: 1,
-                                backgroundColor: colors.muted,
-                                borderRadius: 12,
-                                padding: 12,
-                                alignItems: 'center',
-                            }}>
+                            <TouchableOpacity
+                                onPress={() => showStatCardInfo('burned')}
+                                activeOpacity={0.7}
+                                style={{
+                                    flex: 1,
+                                    backgroundColor: colors.muted,
+                                    borderRadius: 12,
+                                    padding: 12,
+                                    alignItems: 'center',
+                                }}
+                            >
                                 <Flame size={18} color="#f59e0b" style={{ marginBottom: 4 }} />
                                 <Text style={{ color: '#f59e0b', fontWeight: '700', fontSize: 18 }}>
                                     {formatCalories(caloriesOut)}
                                 </Text>
+                                <Text style={{ color: colors.mutedForeground, fontSize: 9, marginTop: 1 }}>Cal</Text>
                                 <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Burned</Text>
-                            </View>
+                            </TouchableOpacity>
 
-                            {/* Remaining or Exceeded */}
-                            <View style={{
-                                flex: 1,
-                                backgroundColor: isOverTarget ? '#fef3c7' : colors.muted,
-                                borderRadius: 12,
-                                padding: 12,
-                                alignItems: 'center',
-                            }}>
+                            {/* Goal Left or Exceeded */}
+                            <TouchableOpacity
+                                onPress={() => showStatCardInfo('goal_left')}
+                                activeOpacity={0.7}
+                                style={{
+                                    flex: 1,
+                                    backgroundColor: isOverTarget ? '#fef3c7' : colors.muted,
+                                    borderRadius: 12,
+                                    padding: 12,
+                                    alignItems: 'center',
+                                }}
+                            >
                                 {isOverTarget ? (
                                     <AlertCircle size={18} color="#d97706" style={{ marginBottom: 4 }} />
                                 ) : (
@@ -716,14 +1468,16 @@ export default function DashboardScreen() {
                                 }}>
                                     {isOverTarget ? `+${formatCalories(overCalories)}` : formatCalories(remaining)}
                                 </Text>
+                                <Text style={{ color: isOverTarget ? '#92400e' : colors.mutedForeground, fontSize: 9, marginTop: 1 }}>Cal</Text>
                                 <Text style={{
                                     color: isOverTarget ? '#92400e' : colors.mutedForeground,
                                     fontSize: 11
                                 }}>
-                                    {isOverTarget ? 'Exceeded' : 'Remaining'}
+                                    {isOverTarget ? 'Exceeded' : 'Goal Left'}
                                 </Text>
-                            </View>
+                            </TouchableOpacity>
                         </View>
+
 
                         {/* Explanation Text */}
                         {isOverTarget && (
@@ -737,7 +1491,7 @@ export default function DashboardScreen() {
                             }}>
                                 <AlertCircle size={16} color="#d97706" />
                                 <Text style={{ color: '#92400e', fontSize: 12, marginLeft: 8, flex: 1 }}>
-                                    You've exceeded your daily goal by {formatCalories(overCalories)} cal (after subtracting burned calories). Consider more exercise!
+                                    You've exceeded your daily goal by {formatCalories(overCalories)} Cal. Consider a walk or lighter dinner!
                                 </Text>
                             </View>
                         )}
@@ -1014,6 +1768,61 @@ export default function DashboardScreen() {
                         </ScrollView>
                     </View>
                 </View>
+            </Modal>
+
+            {/* Stat Card Info Popup */}
+            <Modal
+                visible={statCardInfo.visible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setStatCardInfo(prev => ({ ...prev, visible: false }))}
+            >
+                <TouchableOpacity
+                    style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}
+                    activeOpacity={1}
+                    onPress={() => setStatCardInfo(prev => ({ ...prev, visible: false }))}
+                >
+                    <View style={{
+                        backgroundColor: colors.card,
+                        borderRadius: 20,
+                        padding: 24,
+                        borderTopWidth: 3,
+                        borderTopColor: statCardInfo.color,
+                    }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                            <View style={{
+                                width: 40, height: 40, borderRadius: 20,
+                                backgroundColor: statCardInfo.color + '20',
+                                alignItems: 'center', justifyContent: 'center',
+                            }}>
+                                {statCardInfo.title === 'Calorie Intake' && <Zap size={20} color={statCardInfo.color} />}
+                                {statCardInfo.title === 'Calories Burned' && <Flame size={20} color={statCardInfo.color} />}
+                                {statCardInfo.title === 'Calories You Can Still Eat' && <Target size={20} color={statCardInfo.color} />}
+                            </View>
+                            <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: 'bold', marginLeft: 12, flex: 1 }}>
+                                {statCardInfo.title}
+                            </Text>
+                            <TouchableOpacity onPress={() => setStatCardInfo(prev => ({ ...prev, visible: false }))}>
+                                <X size={20} color={colors.mutedForeground} />
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={{ color: colors.foreground, fontSize: 14, lineHeight: 22 }}>
+                            {statCardInfo.description}
+                        </Text>
+                        <TouchableOpacity
+                            onPress={() => setStatCardInfo(prev => ({ ...prev, visible: false }))}
+                            style={{
+                                marginTop: 20,
+                                backgroundColor: statCardInfo.color,
+                                paddingVertical: 12,
+                                borderRadius: 12,
+                                alignItems: 'center',
+                            }}
+                        >
+                            <Text style={{ color: '#fff', fontWeight: '600' }}>Got it!</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
             </Modal>
         </SafeAreaView>
     );

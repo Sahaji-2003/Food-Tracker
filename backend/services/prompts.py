@@ -81,6 +81,15 @@ Return ONLY valid JSON, no markdown or extra text."""
 
 MEAL_TEXT_PROMPT = """Analyze this meal described as: "{text}"
 
+IMPORTANT VALIDATION:
+First, determine if the input is a valid food or meal description. If the text is NOT about food eaten (e.g., questions about weather, jokes, general conversation, exercises, or anything unrelated to describing a meal or food items), respond with ONLY this JSON:
+{{
+    "error": true,
+    "message": "The information provided is not about food or meals. Please describe what you ate in this format: 'I had [food items] for [meal type]'. Example: 'I had 2 chapatis with dal and rice for lunch'"
+}}
+
+If the input IS a valid food description, proceed with the analysis below:
+
 USER PROFILE:
 - Gender: {gender}
 - Age: {age} years
@@ -89,6 +98,27 @@ USER PROFILE:
 - Daily Calorie Target: {calorie_target} kcal
 - Calories Already Consumed Today: {calories_consumed} kcal
 - Preferred Activities: {preferred_tasks}
+
+CALORIE BURN REFERENCE TABLE (adjust based on user's weight):
+| Gender | Weight | Moderate Walk (6,000 steps) | Brisk Walk (7,500 steps) |
+|--------|--------|----------------------------|--------------------------| 
+| Male   | 60 kg  | 230 kcal                   | 328 kcal                |
+| Male   | 70 kg  | 244 kcal                   | 349 kcal                |
+| Male   | 80 kg  | 259 kcal                   | 370 kcal                |
+| Male   | 90 kg  | 273 kcal                   | 390 kcal                |
+| Female | 50 kg  | 180 kcal                   | 257 kcal                |
+| Female | 60 kg  | 202 kcal                   | 288 kcal                |
+| Female | 70 kg  | 224 kcal                   | 319 kcal                |
+| Female | 80 kg  | 245 kcal                   | 350 kcal                |
+
+CALORIE GUIDELINES:
+- Walking: ~100 kcal per 2000 steps at 4 km/hour
+- Running: ~100 kcal per 1000 steps at 8 km/hour
+- Swimming: ~400-700 kcal/hour depending on intensity
+- Gym Workout: ~300-500 kcal/hour
+- Yoga: ~150-300 kcal/hour
+- Cycling: ~400-600 kcal/hour
+- HIIT: ~500-800 kcal/hour
 
 Return a JSON object with EXACTLY this structure:
 {{
@@ -106,22 +136,33 @@ Return a JSON object with EXACTLY this structure:
     "excess_calories": 000,
     "tasks": [
         {{
-            "type": "activity type",
+            "type": "activity type (walking/running/swimming/gym/yoga/cycling/hiit)",
             "name": "Human readable task name",
             "duration_minutes": 00,
             "calories_to_burn": 000,
             "distance_km": 0.0,
             "steps": 0000,
-            "description": "Markdown formatted detailed instructions"
+            "description": "Markdown formatted detailed instructions for this activity. Include:\\n- What exercises/movements to do\\n- How many reps/sets or duration for each\\n- Any tips for proper form\\n- Make it specific to burning the specified calories"
         }}
     ]
 }}
 
-Guidelines:
-- Be realistic with calorie estimates
-- Calculate excess_calories = (calories_consumed + total_calories) - calorie_target
-- Only suggest tasks if there are excess calories
-- Generate tasks only for preferred activities: {preferred_tasks}
+IMPORTANT RULES:
+1. Break down the meal into individual items with calories for EACH item
+2. Be REALISTIC with calorie estimates - don't overestimate carbs or portions
+3. Calculate excess_calories = (calories_consumed + total_calories) - calorie_target
+   - If excess_calories <= 0, set to 0 (no burn needed, within budget)
+   - Only suggest tasks to burn the EXCESS calories, not the entire meal
+4. Generate tasks ONLY for the user's preferred activities: {preferred_tasks}
+5. Personalize calorie burn estimates based on user's weight and gender
+6. If no excess calories, return empty tasks array
+7. Plate grade should consider the user's goal (if they're trying to lose weight, grade accordingly)
+8. For each task, provide detailed markdown description with specific exercises and instructions
+
+TASK DESCRIPTION EXAMPLES:
+- For walking: "## 30-min Walk\\n\\n**Goal:** Burn 150 calories\\n\\n### Route\\n- Walk at 4 km/h pace\\n- Keep arms swinging naturally\\n\\n### Tips\\n- Stay hydrated\\n- Wear comfortable shoes"
+- For yoga: "## 20-min Yoga Flow\\n\\n**Goal:** Burn 100 calories\\n\\n### Sequence\\n1. **Sun Salutation A** - 5 rounds\\n2. **Warrior I & II** - Hold 30 sec each side\\n3. **Tree Pose** - 1 min each side\\n\\n### Focus\\n- Deep breathing\\n- Mindful movement"
+- For gym: "## Gym Workout\\n\\n**Goal:** Burn 200 calories\\n\\n### Exercises\\n1. **Squats** - 3 sets x 12 reps\\n2. **Lunges** - 3 sets x 10 each leg\\n3. **Push-ups** - 3 sets x 15 reps\\n\\n### Rest\\n- 60 seconds between sets"
 
 Return ONLY valid JSON, no markdown or extra text."""
 

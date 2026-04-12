@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,11 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  Animated,
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import LottieView from 'lottie-react-native';
 import { supabase } from '@/lib/supabase';
 import { useThemeStore } from '@/store/useThemeStore';
 
@@ -29,6 +31,37 @@ export default function LoginScreen() {
     confirmPassword: '',
     general: '',
   });
+
+  // Rotating taglines
+  const taglines = [
+    'Your AI-Powered Health Partner',
+    'Track. Analyze. Transform.',
+    'Smart Fitness, Smarter You',
+  ];
+  const [taglineIndex, setTaglineIndex] = useState(0);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  // Rotate taglines every 3 seconds with fade animation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Fade out
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        // Change tagline
+        setTaglineIndex((prev) => (prev + 1) % taglines.length);
+        // Fade in
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Clear errors when switching modes
   useEffect(() => {
@@ -142,14 +175,30 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 32, paddingVertical: 48 }}>
-          {/* Header */}
-          <View style={{ alignItems: 'center', marginBottom: 48 }}>
-            <Text style={{ fontSize: 48, fontWeight: 'bold', color: colors.primary, marginBottom: 8 }}>
-              FitFlow
-            </Text>
-            <Text style={{ fontSize: 16, color: colors.mutedForeground }}>
-              Your AI-Powered Health Partner
-            </Text>
+          {/* Header with inline Lottie */}
+          <View style={{ alignItems: 'center', marginBottom: 32 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={{ fontSize: 42, fontWeight: 'bold', color: colors.primary }}>
+                Fit
+              </Text>
+              <LottieView
+                source={{ uri: 'https://lottie.host/37bac976-cb52-4aa0-9f0f-760d04cf36e9/3nsmYjWKR0.lottie' }}
+                style={{ width: 44, height: 44, marginHorizontal: 2 }}
+                autoPlay
+                loop
+              />
+              <Text style={{ fontSize: 42, fontWeight: 'bold', color: '#f59e0b' }}>
+                Flow
+              </Text>
+            </View>
+            <Animated.Text style={{
+              fontSize: 16,
+              color: colors.mutedForeground,
+              textAlign: 'center',
+              opacity: fadeAnim,
+            }}>
+              {taglines[taglineIndex]}
+            </Animated.Text>
           </View>
 
           {/* General Error */}

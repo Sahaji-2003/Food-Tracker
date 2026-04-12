@@ -1,11 +1,14 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Alert } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Send, Trash2, Bot, User, ImagePlus, X } from 'lucide-react-native';
+import { Send, Trash2, Bot, User, ImagePlus, X, Sparkles, MessageCircle } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Markdown from 'react-native-markdown-display';
+import { LinearGradient } from 'expo-linear-gradient';
+import LottieView from 'lottie-react-native';
 import { useThemeStore } from '@/store/useThemeStore';
 import { chatAPI } from '@/lib/api';
+import { useAlert } from '@/components/ui';
 
 interface Message {
     id: string;
@@ -17,6 +20,7 @@ interface Message {
 
 export default function ChatScreen() {
     const { colors } = useThemeStore();
+    const { showAlert } = useAlert();
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -103,21 +107,26 @@ export default function ChatScreen() {
     };
 
     const clearHistory = async () => {
-        Alert.alert('Clear Chat', 'Are you sure you want to clear all messages?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Clear',
-                style: 'destructive',
-                onPress: async () => {
-                    try {
-                        await chatAPI.clearHistory();
-                        setMessages([]);
-                    } catch (error) {
-                        console.error('Failed to clear history:', error);
-                    }
+        showAlert({
+            title: 'Clear Chat',
+            message: 'Are you sure you want to clear all messages?',
+            type: 'warning',
+            buttons: [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Clear',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await chatAPI.clearHistory();
+                            setMessages([]);
+                        } catch (error) {
+                            console.error('Failed to clear history:', error);
+                        }
+                    },
                 },
-            },
-        ]);
+            ],
+        });
     };
 
     const scrollToEnd = () => {
@@ -132,10 +141,18 @@ export default function ChatScreen() {
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-            {/* Header */}
+            {/* Header with green Sparkles icon */}
             <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                <Bot size={28} color={colors.primary} />
-                <View style={{ flex: 1, marginLeft: 12 }}>
+                <View style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 22,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                }}>
+                    <Sparkles size={28} color="#22c55e" fill="#4ade80" />
+                </View>
+                <View style={{ flex: 1, marginLeft: 8 }}>
                     <Text style={{ fontSize: 20, fontWeight: 'bold', color: colors.foreground }}>
                         Fit Buddy AI
                     </Text>
@@ -168,9 +185,15 @@ export default function ChatScreen() {
                             <Text style={{ color: colors.mutedForeground, marginTop: 12 }}>Loading chat...</Text>
                         </View>
                     ) : messages.length === 0 ? (
-                        <View style={{ alignItems: 'center', marginTop: 40 }}>
-                            <Text style={{ fontSize: 48, marginBottom: 16 }}>🤖</Text>
-                            <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: '600', textAlign: 'center' }}>
+                        <View style={{ alignItems: 'center', marginTop: 20 }}>
+                            {/* Lottie Chat Buddy Animation */}
+                            <LottieView
+                                source={{ uri: 'https://lottie.host/67866d35-74bb-4d0a-82d8-3201d5f54bef/N6cgEFzQDP.lottie' }}
+                                style={{ width: 180, height: 180 }}
+                                autoPlay
+                                loop
+                            />
+                            <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: '600', textAlign: 'center', marginTop: 8 }}>
                                 Hi! I'm Fit Buddy
                             </Text>
                             <Text style={{ color: colors.mutedForeground, textAlign: 'center', marginTop: 8, paddingHorizontal: 24 }}>
@@ -306,7 +329,8 @@ export default function ChatScreen() {
                     flexDirection: 'row',
                     alignItems: 'center',
                     padding: 12,
-                    paddingBottom: Platform.OS === 'ios' ? 12 : 20,
+                    paddingBottom: Platform.OS === 'ios' ? 20 : 30,
+                    marginBottom: 20,
                     borderTopWidth: 1,
                     borderTopColor: colors.border,
                     backgroundColor: colors.background,

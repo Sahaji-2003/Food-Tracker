@@ -128,64 +128,120 @@ async def analyze_meal_from_text(
     request: MealAnalysisRequest,
     user_id: str = Depends(get_user_id)
 ):
-    """Analyze a meal from text description."""
+    """Analyze a meal from text description with personalized context."""
     if not request.text:
         raise HTTPException(status_code=400, detail="Text description is required")
     
     try:
-        # Analyze with Gemini
-        analysis = await analyze_meal_text(request.text)
+        print(f"[DEBUG] Starting text meal analysis for user: {user_id}")
+        print(f"[DEBUG] Text received: {request.text}")
         
         supabase = get_supabase()
+        
+        # Get user profile for personalized analysis
+        profile_result = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
+        user_profile = profile_result.data if profile_result.data else {}
+        print(f"[DEBUG] User profile: {user_profile}")
+        
+        # Get today's calorie consumption
+        target_date = date.today().isoformat()
+        daily_log = supabase.table("daily_logs")\
+            .select("*")\
+            .eq("user_id", user_id)\
+            .eq("date", target_date)\
+            .single()\
+            .execute()
+        calories_consumed = daily_log.data.get("calories_in", 0) if daily_log.data else 0
+        print(f"[DEBUG] Calories consumed today: {calories_consumed}")
+        
+        # Analyze with Gemini (personalized)
+        print("[DEBUG] Calling Gemini API with user profile...")
+        analysis = await analyze_meal_text(request.text, user_profile, calories_consumed)
+        print(f"[DEBUG] Gemini analysis complete")
+        
+        # Check for validation error (non-food input)
+        if analysis.get("error"):
+            print(f"[DEBUG] Validation error: {analysis.get('message')}")
+            raise HTTPException(
+                status_code=400, 
+                detail=analysis.get("message", "Invalid input. Please describe a meal or food items.")
+            )
+        
+        # Handle response format (total_calories vs calories)
+        total_calories = analysis.get("total_calories", analysis.get("calories", 0))
         
         # Save meal to history
         meal_record = {
             "id": str(uuid.uuid4()),
             "user_id": user_id,
             "food_name": analysis.get("food", request.text),
+            "image_description": analysis.get("image_description", "N/A - text description"),
             "ingredients": analysis.get("ingredients", ""),
-            "calories": analysis.get("calories", 0),
+            "calories": total_calories,
             "macros": analysis.get("macros", {"p": 0, "c": 0, "f": 0}),
             "plate_grade": analysis.get("plate_grade", "C"),
             "reasoning": analysis.get("reasoning", ""),
             "source": "text"
         }
         
+        print(f"[DEBUG] Saving meal to history")
         supabase.table("meal_history").insert(meal_record).execute()
+        print("[DEBUG] Meal saved to history successfully")
         
         # Update daily calorie count
-        target_date = date.today().isoformat()
-        try:
-            daily_log = supabase.table("daily_logs")\
-                .select("*")\
-                .eq("user_id", user_id)\
-                .eq("date", target_date)\
-                .single()\
+        if daily_log.data:
+            new_calories = daily_log.data["calories_in"] + total_calories
+            supabase.table("daily_logs")\
+                .update({"calories_in": new_calories})\
+                .eq("id", daily_log.data["id"])\
                 .execute()
-            
-            if daily_log.data:
-                new_calories = daily_log.data["calories_in"] + analysis.get("calories", 0)
-                supabase.table("daily_logs")\
-                    .update({"calories_in": new_calories})\
-                    .eq("id", daily_log.data["id"])\
-                    .execute()
-        except:
+        else:
+            # Create new daily log
             supabase.table("daily_logs").insert({
                 "user_id": user_id,
                 "date": target_date,
-                "calories_in": analysis.get("calories", 0),
+                "calories_in": total_calories,
                 "calories_out": 0,
                 "water_ml": 0,
                 "steps": 0,
                 "active_minutes": 0
             }).execute()
         
+        # Create burn tasks (multiple tasks from new format)
+        tasks = analysis.get("tasks", [])
+        created_tasks = []
+        for task_data in tasks:
+            if task_data.get("calories_to_burn", 0) > 0:
+                burn_task = {
+                    "id": str(uuid.uuid4()),
+                    "user_id": user_id,
+                    "meal_id": meal_record["id"],
+                    "task_type": task_data.get("type", "walking"),
+                    "name": task_data.get("name", "Burn calories"),
+                    "description": task_data.get("description", ""),
+                    "duration_minutes": task_data.get("duration_minutes", 30),
+                    "calories_to_burn": task_data.get("calories_to_burn", 0),
+                    "distance_km": task_data.get("distance_km"),
+                    "steps": task_data.get("steps"),
+                    "status": "pending",
+                    "date": target_date
+                }
+                supabase.table("burn_tasks").insert(burn_task).execute()
+                created_tasks.append(burn_task)
+                print(f"[DEBUG] Created burn task: {burn_task['name']}")
+        
         return {
             **analysis,
-            "meal_id": meal_record["id"]
+            "meal_id": meal_record["id"],
+            "created_tasks": created_tasks
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"[ERROR] Text meal analysis failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
-from routes import profile, daily, meals, suggestions, chat
+from routes import profile, daily, meals, suggestions, chat, google_fit, weekly
 
 app = FastAPI(
     title="FitFlow AI API",
@@ -45,6 +45,8 @@ app.include_router(daily.router, prefix="/api/daily", tags=["daily"])
 app.include_router(meals.router, prefix="/api/meals", tags=["meals"])
 app.include_router(suggestions.router, prefix="/api/suggestions", tags=["suggestions"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(google_fit.router, prefix="/api/google-fit", tags=["google-fit"])
+app.include_router(weekly.router, prefix="/api/weekly", tags=["weekly"])
 
 
 if __name__ == "__main__":

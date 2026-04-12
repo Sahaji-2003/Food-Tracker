@@ -28,8 +28,8 @@ const asyncStorage = {
 export const useThemeStore = create<ThemeState>()(
     persist(
         (set) => ({
-            mode: 'light', // Default to light theme
-            colors: lightTheme,
+            mode: 'dark', // Default to dark theme
+            colors: darkTheme,
 
             setTheme: (mode: ThemeMode) => {
                 set({

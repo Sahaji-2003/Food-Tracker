@@ -2,10 +2,10 @@
 // Green gradient theme
 
 export const lightTheme = {
-    // Base colors
-    background: '#ffffff',
+    // Base colors - light green tint
+    background: '#f0fdf4',  // Very light green background
     foreground: '#0f172a',
-    card: '#f8fafc',
+    card: '#ffffff',
     cardForeground: '#0f172a',
 
     // Primary (green)
