@@ -28,10 +28,15 @@
       },
       "package": "com.fitflow.ai",
       "permissions": [
+        "android.permission.CAMERA",
         "android.permission.ACTIVITY_RECOGNITION",
         "android.permission.health.READ_STEPS",
         "android.permission.health.READ_TOTAL_CALORIES_BURNED",
-        "android.permission.health.READ_ACTIVE_CALORIES_BURNED"
+        "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
+        "android.permission.health.READ_DISTANCE",
+        "android.permission.health.READ_WEIGHT",
+        "android.permission.health.READ_HEIGHT",
+        "android.permission.health.READ_HEART_RATE"
       ]
     },
     "plugins": [
@@ -39,7 +44,14 @@
       "expo-secure-store",
       "expo-asset",
       "expo-font",
-      "expo-splash-screen"
+      "expo-splash-screen",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow FitFlow AI to access your camera to take meal photos",
+          "photosPermission": "Allow FitFlow AI to access your photos to select meal images"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

@@ -26,6 +26,63 @@ interface Message {
     created_at?: string;
 }
 
+const LOADING_MESSAGES = [
+    "Cooking up a response...",
+    "Thinking about your health...",
+    "Brewing nutrition tips...",
+    "Calculating your macros...",
+    "Plating your insights...",
+    "Seasoning the advice...",
+    "Scanning ingredients...",
+    "Sifting through recipes...",
+    "Mixing healthy ideas...",
+    "Fetching food facts...",
+    "Preparing your meal plan...",
+    "Stirring the data...",
+    "Garnishing the details...",
+    "Balancing the nutrients...",
+    "Whisking up some wisdom...",
+];
+
+const LoadingText = ({ color }: { color: string }) => {
+    const [index, setIndex] = useState(Math.floor(Math.random() * LOADING_MESSAGES.length));
+    const fadeAnim = useRef(new Animated.Value(1)).current;
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            Animated.timing(fadeAnim, {
+                toValue: 0,
+                duration: 500,
+                useNativeDriver: true,
+            }).start(() => {
+                setIndex(prev => {
+                    let next = Math.floor(Math.random() * LOADING_MESSAGES.length);
+                    while (next === prev) {
+                        next = Math.floor(Math.random() * LOADING_MESSAGES.length);
+                    }
+                    return next;
+                });
+                Animated.timing(fadeAnim, {
+                    toValue: 1,
+                    duration: 500,
+                    useNativeDriver: true,
+                }).start();
+            });
+        }, 3000);
+
+        return () => clearInterval(interval);
+    }, []);
+
+    return (
+        <Animated.View style={{ opacity: fadeAnim, flexDirection: 'row', alignItems: 'center' }}>
+            <ActivityIndicator size="small" color={color} style={{ marginRight: 8 }} />
+            <Text style={{ color, fontSize: 14, fontStyle: 'italic' }}>
+                {LOADING_MESSAGES[index]}
+            </Text>
+        </Animated.View>
+    );
+};
+
 export default function ChatScreen() {
     const { colors } = useThemeStore();
     const { showAlert } = useAlert();
@@ -65,14 +122,23 @@ export default function ChatScreen() {
     }, []);
 
     const pickImage = async () => {
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            quality: 0.8,
-            base64: true,
-        });
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                return;
+            }
 
-        if (!result.canceled && result.assets[0]) {
-            setSelectedImage(result.assets[0].uri);
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                quality: 0.8,
+                base64: true,
+            });
+
+            if (!result.canceled && result.assets[0]) {
+                setSelectedImage(result.assets[0].uri);
+            }
+        } catch (error) {
+            console.error('Image picker error:', error);
         }
     };
 
@@ -332,9 +398,11 @@ export default function ChatScreen() {
                                 backgroundColor: colors.secondary,
                                 borderRadius: 16,
                                 borderTopLeftRadius: 4,
-                                padding: 16,
+                                paddingVertical: 12,
+                                paddingHorizontal: 16,
+                                minWidth: 150,
                             }}>
-                                <ActivityIndicator size="small" color={colors.primary} />
+                                <LoadingText color={colors.primary} />
                             </View>
                         </View>
                     )}

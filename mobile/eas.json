@@ -18,11 +18,22 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://wsqgvbldtdyyuueudgqf.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzcWd2YmxkdGR5eXV1ZXVkZ3FmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwOTA5NjMsImV4cCI6MjA4MjY2Njk2M30.F4eFH0B1Nf-PjKboSa86qE1ktE63m3GuvwBEyjKF9Sg",
-        "EXPO_PUBLIC_API_URL": "http://192.168.1.12:8000"
+        "EXPO_PUBLIC_API_URL": "https://food-tracker-api-v1.vercel.app"
       }
     },
     "production": {
       "autoIncrement": true
+    },
+    "apk": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wsqgvbldtdyyuueudgqf.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzcWd2YmxkdGR5eXV1ZXVkZ3FmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwOTA5NjMsImV4cCI6MjA4MjY2Njk2M30.F4eFH0B1Nf-PjKboSa86qE1ktE63m3GuvwBEyjKF9Sg",
+        "EXPO_PUBLIC_API_URL": "https://food-tracker-api-v1.vercel.app"
+      }
     }
   },
   "submit": {

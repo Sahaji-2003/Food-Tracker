@@ -55,6 +55,13 @@ export default {
                 }
             ],
             [
+                "expo-image-picker",
+                {
+                    cameraPermission: "Allow FitFlow AI to access your camera to take meal photos",
+                    photosPermission: "Allow FitFlow AI to access your photos to select meal images"
+                }
+            ],
+            [
                 "expo-health-connect",
                 {
                     permissions: [

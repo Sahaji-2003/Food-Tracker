@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -6,7 +6,6 @@ import {
     ActivityIndicator,
     Dimensions,
     ScrollView,
-    Animated,
     KeyboardAvoidingView,
     Platform,
     Modal,
@@ -20,6 +19,9 @@ import { supabase } from '@/lib/supabase';
 import { useThemeStore } from '@/store/useThemeStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Stable Lottie source — defined outside the component to avoid re-creating object references
+const LOTTIE_BOT_SOURCE = { uri: 'https://lottie.host/67866d35-74bb-4d0a-82d8-3201d5f54bef/N6cgEFzQDP.lottie' };
 
 type Goal = 'Weight Loss' | 'Muscle Gain' | 'Maintenance' | 'General Health';
 
@@ -42,7 +44,7 @@ interface Message {
 }
 
 // Bot Message Bubble - Lottie only for latest, static icon for past messages
-const BotBubble = ({
+const BotBubble = React.memo(({
     content,
     showAvatar = true,
     isLatest = false,
@@ -71,7 +73,7 @@ const BotBubble = ({
                 }}>
                     {isLatest ? (
                         <LottieView
-                            source={{ uri: 'https://lottie.host/67866d35-74bb-4d0a-82d8-3201d5f54bef/N6cgEFzQDP.lottie' }}
+                            source={LOTTIE_BOT_SOURCE}
                             style={{ width: 40, height: 40 }}
                             autoPlay
                             loop
@@ -97,10 +99,10 @@ const BotBubble = ({
             </View>
         </View>
     );
-};
+});
 
 // User Message Bubble (no animation to prevent flickering)
-const UserBubble = ({ content, colors }: { content: string; colors: any }) => {
+const UserBubble = React.memo(({ content, colors }: { content: string; colors: any }) => {
     return (
         <View style={{
             flexDirection: 'row',
@@ -125,15 +127,15 @@ const UserBubble = ({ content, colors }: { content: string; colors: any }) => {
             </LinearGradient>
         </View>
     );
-};
+});
 
 // Typing Indicator (simple static dots - no animation to prevent flicker)
-const TypingIndicator = ({ colors }: { colors: any }) => {
+const TypingIndicator = React.memo(({ colors }: { colors: any }) => {
     return (
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12 }}>
             <View style={{ width: 40, height: 40, marginRight: 8 }}>
                 <LottieView
-                    source={{ uri: 'https://lottie.host/67866d35-74bb-4d0a-82d8-3201d5f54bef/N6cgEFzQDP.lottie' }}
+                    source={LOTTIE_BOT_SOURCE}
                     style={{ width: 40, height: 40 }}
                     autoPlay
                     loop
@@ -154,10 +156,10 @@ const TypingIndicator = ({ colors }: { colors: any }) => {
             </View>
         </View>
     );
-};
+});
 
 // Scroll Number Picker
-const ScrollPicker = ({
+const ScrollPicker = React.memo(({
     min,
     max,
     value,
@@ -174,7 +176,7 @@ const ScrollPicker = ({
 }) => {
     const scrollRef = useRef<ScrollView>(null);
     const ITEM_HEIGHT = 44;
-    const numbers = Array.from({ length: max - min + 1 }, (_, i) => min + i);
+    const numbers = useMemo(() => Array.from({ length: max - min + 1 }, (_, i) => min + i), [min, max]);
 
     const handleScroll = useCallback((event: any) => {
         const offsetY = event.nativeEvent.contentOffset.y;
@@ -224,10 +226,10 @@ const ScrollPicker = ({
             </ScrollView>
         </View>
     );
-};
+});
 
 // Selection Option Card
-const OptionCard = ({
+const OptionCard = React.memo(({
     label,
     icon,
     isSelected,
@@ -265,7 +267,289 @@ const OptionCard = ({
         </Text>
         {isSelected && <Check size={14} color="#fff" style={{ marginLeft: 4 }} />}
     </TouchableOpacity>
-);
+));
+
+// Continue Button - extracted to avoid recreating LinearGradient on every render
+const ContinueButton = React.memo(({ onPress, colors }: { onPress: () => void; colors: any }) => (
+    <TouchableOpacity onPress={onPress} style={{ marginTop: 12 }}>
+        <LinearGradient
+            colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
+            style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+        >
+            <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
+            <ChevronRight size={18} color="#fff" />
+        </LinearGradient>
+    </TouchableOpacity>
+));
+
+// Memoized Input Area component to prevent re-renders from parent state changes
+const InputArea = React.memo(({
+    inputType,
+    formData,
+    setFormData,
+    handleUserResponse,
+    handleSubmit,
+    isLoading,
+    currentStep,
+    colors,
+}: {
+    inputType: string | null | undefined;
+    formData: FormData;
+    setFormData: React.Dispatch<React.SetStateAction<FormData>>;
+    handleUserResponse: (response: string, nextStep: number) => void;
+    handleSubmit: () => void;
+    isLoading: boolean;
+    currentStep: number;
+    colors: any;
+}) => {
+    const goals: { value: Goal; icon: string }[] = useMemo(() => [
+        { value: 'Weight Loss', icon: '🔥' },
+        { value: 'Muscle Gain', icon: '💪' },
+        { value: 'Maintenance', icon: '⚖️' },
+        { value: 'General Health', icon: '❤️' },
+    ], []);
+
+    const genderOptions = useMemo(() => [
+        { value: 'male' as const, label: 'Male', icon: '👨' },
+        { value: 'female' as const, label: 'Female', icon: '👩' },
+        { value: 'other' as const, label: 'Other', icon: '🧑' },
+    ], []);
+
+    const activityOptions = useMemo(() => [
+        { value: 'walking', label: 'Walking', icon: '🚶' },
+        { value: 'running', label: 'Running', icon: '🏃' },
+        { value: 'cycling', label: 'Cycling', icon: '🚴' },
+        { value: 'gym', label: 'Gym', icon: '🏋️' },
+        { value: 'yoga', label: 'Yoga', icon: '🧘' },
+        { value: 'swimming', label: 'Swimming', icon: '🏊' },
+    ], []);
+
+    const allergyOptions = useMemo(() => ['Dairy', 'Gluten', 'Peanuts', 'Eggs', 'Soy', 'Fish', 'None'], []);
+
+    if (!inputType) return null;
+
+    switch (inputType) {
+        case 'weight':
+            return (
+                <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+                    <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
+                        Weight (kg)
+                    </Text>
+                    <ScrollPicker
+                        min={30}
+                        max={200}
+                        value={formData.weight}
+                        onChange={useCallback((val: number) => setFormData(prev => ({ ...prev, weight: val })), [setFormData])}
+                        colors={colors}
+                    />
+                    <ContinueButton
+                        onPress={() => handleUserResponse(`${formData.weight} kg`, currentStep + 1)}
+                        colors={colors}
+                    />
+                </View>
+            );
+
+        case 'height':
+            return (
+                <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+                    <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
+                        Height (cm)
+                    </Text>
+                    <ScrollPicker
+                        min={100}
+                        max={220}
+                        value={formData.height}
+                        onChange={useCallback((val: number) => setFormData(prev => ({ ...prev, height: val })), [setFormData])}
+                        colors={colors}
+                    />
+                    <ContinueButton
+                        onPress={() => handleUserResponse(`${formData.height} cm`, currentStep + 1)}
+                        colors={colors}
+                    />
+                </View>
+            );
+
+        case 'gender':
+            return (
+                <View style={{ marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                        {genderOptions.map((option) => (
+                            <OptionCard
+                                key={option.value}
+                                label={option.label}
+                                icon={option.icon}
+                                isSelected={formData.gender === option.value}
+                                onPress={() => {
+                                    setFormData(prev => ({ ...prev, gender: option.value }));
+                                    setTimeout(() => handleUserResponse(option.label, currentStep + 1), 300);
+                                }}
+                                colors={colors}
+                            />
+                        ))}
+                    </View>
+                </View>
+            );
+
+        case 'age':
+            return (
+                <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+                    <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
+                        Age (years)
+                    </Text>
+                    <ScrollPicker
+                        min={13}
+                        max={90}
+                        value={formData.age}
+                        onChange={useCallback((val: number) => setFormData(prev => ({ ...prev, age: val })), [setFormData])}
+                        suffix=" yrs"
+                        colors={colors}
+                    />
+                    <ContinueButton
+                        onPress={() => handleUserResponse(`${formData.age} years old`, currentStep + 1)}
+                        colors={colors}
+                    />
+                </View>
+            );
+
+        case 'goal':
+            return (
+                <View style={{ marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                        {goals.map((goal) => (
+                            <OptionCard
+                                key={goal.value}
+                                label={goal.value}
+                                icon={goal.icon}
+                                isSelected={formData.goal === goal.value}
+                                onPress={() => {
+                                    setFormData(prev => ({ ...prev, goal: goal.value }));
+                                    setTimeout(() => handleUserResponse(goal.value, currentStep + 1), 300);
+                                }}
+                                colors={colors}
+                            />
+                        ))}
+                    </View>
+                </View>
+            );
+
+        case 'targetWeight':
+            return (
+                <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+                    <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
+                        Target Weight (kg)
+                    </Text>
+                    <ScrollPicker
+                        min={30}
+                        max={200}
+                        value={formData.targetWeight}
+                        onChange={useCallback((val: number) => setFormData(prev => ({ ...prev, targetWeight: val })), [setFormData])}
+                        colors={colors}
+                    />
+                    <ContinueButton
+                        onPress={() => handleUserResponse(`${formData.targetWeight} kg`, currentStep + 1)}
+                        colors={colors}
+                    />
+                </View>
+            );
+
+        case 'activities':
+            return (
+                <View style={{ marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                        {activityOptions.map((activity) => (
+                            <OptionCard
+                                key={activity.value}
+                                label={activity.label}
+                                icon={activity.icon}
+                                isSelected={formData.preferredTasks.includes(activity.value)}
+                                onPress={() => {
+                                    setFormData(prev => {
+                                        const newTasks = prev.preferredTasks.includes(activity.value)
+                                            ? prev.preferredTasks.filter(t => t !== activity.value)
+                                            : [...prev.preferredTasks, activity.value];
+                                        return { ...prev, preferredTasks: newTasks };
+                                    });
+                                }}
+                                colors={colors}
+                                small
+                            />
+                        ))}
+                    </View>
+                    {formData.preferredTasks.length > 0 && (
+                        <ContinueButton
+                            onPress={() => handleUserResponse(formData.preferredTasks.map(t =>
+                                activityOptions.find(a => a.value === t)?.label || t
+                            ).join(', '), currentStep + 1)}
+                            colors={colors}
+                        />
+                    )}
+                </View>
+            );
+
+        case 'allergies':
+            return (
+                <View style={{ marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                        {allergyOptions.map((allergy) => (
+                            <OptionCard
+                                key={allergy}
+                                label={allergy}
+                                isSelected={formData.allergies.includes(allergy)}
+                                onPress={() => {
+                                    setFormData(prev => {
+                                        if (allergy === 'None') {
+                                            return { ...prev, allergies: ['None'] };
+                                        }
+                                        const newAllergies = prev.allergies.includes(allergy)
+                                            ? prev.allergies.filter(a => a !== allergy)
+                                            : [...prev.allergies.filter(a => a !== 'None'), allergy];
+                                        return { ...prev, allergies: newAllergies };
+                                    });
+                                }}
+                                colors={colors}
+                                small
+                            />
+                        ))}
+                    </View>
+                    <ContinueButton
+                        onPress={() => handleUserResponse(
+                            formData.allergies.length > 0 ? formData.allergies.join(', ') : 'No allergies',
+                            currentStep + 1
+                        )}
+                        colors={colors}
+                    />
+                </View>
+            );
+
+        case 'confirm':
+            return (
+                <View style={{ marginBottom: 16 }}>
+                    <TouchableOpacity onPress={handleSubmit} disabled={isLoading}>
+                        <LinearGradient
+                            colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
+                            style={{
+                                paddingVertical: 18,
+                                borderRadius: 16,
+                                alignItems: 'center',
+                                opacity: isLoading ? 0.7 : 1,
+                            }}
+                        >
+                            {isLoading ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 17 }}>
+                                    🚀 Let's Go!
+                                </Text>
+                            )}
+                        </LinearGradient>
+                    </TouchableOpacity>
+                </View>
+            );
+
+        default:
+            return null;
+    }
+});
 
 export default function OnboardingScreen() {
     const { colors } = useThemeStore();
@@ -287,31 +571,7 @@ export default function OnboardingScreen() {
         preferredTasks: [],
     });
 
-    const goals: { value: Goal; icon: string }[] = [
-        { value: 'Weight Loss', icon: '🔥' },
-        { value: 'Muscle Gain', icon: '💪' },
-        { value: 'Maintenance', icon: '⚖️' },
-        { value: 'General Health', icon: '❤️' },
-    ];
-
-    const genderOptions = [
-        { value: 'male' as const, label: 'Male', icon: '👨' },
-        { value: 'female' as const, label: 'Female', icon: '👩' },
-        { value: 'other' as const, label: 'Other', icon: '🧑' },
-    ];
-
-    const activityOptions = [
-        { value: 'walking', label: 'Walking', icon: '🚶' },
-        { value: 'running', label: 'Running', icon: '🏃' },
-        { value: 'cycling', label: 'Cycling', icon: '🚴' },
-        { value: 'gym', label: 'Gym', icon: '🏋️' },
-        { value: 'yoga', label: 'Yoga', icon: '🧘' },
-        { value: 'swimming', label: 'Swimming', icon: '🏊' },
-    ];
-
-    const allergyOptions = ['Dairy', 'Gluten', 'Peanuts', 'Eggs', 'Soy', 'Fish', 'None'];
-
-    const conversationFlow = [
+    const conversationFlow = useMemo(() => [
         { bot: "Hello there! 👋", inputType: null },
         { bot: "I'm Fit Buddy, your personal health assistant!", inputType: null },
         { bot: "Let's create a personalized fitness plan just for you. Ready? 🚀", inputType: null },
@@ -324,23 +584,9 @@ export default function OnboardingScreen() {
         { bot: "What activities do you enjoy? (Select all that apply)", inputType: 'activities' },
         { bot: "Almost done! Any food allergies I should know about?", inputType: 'allergies' },
         { bot: "Perfect! I've got everything I need. Let's start your journey! 🎉", inputType: 'confirm' },
-    ];
+    ], []);
 
-    useEffect(() => {
-        // Start the conversation
-        addBotMessage(0);
-    }, []);
-
-    useEffect(() => {
-        // Auto scroll to bottom when messages change
-        if (messages.length > 0) {
-            setTimeout(() => {
-                scrollViewRef.current?.scrollToEnd({ animated: true });
-            }, 150);
-        }
-    }, [messages.length]);
-
-    const addBotMessage = async (stepIndex: number) => {
+    const addBotMessage = useCallback(async (stepIndex: number) => {
         if (stepIndex >= conversationFlow.length) return;
 
         setIsTyping(true);
@@ -362,9 +608,23 @@ export default function OnboardingScreen() {
         if (!conversationFlow[stepIndex].inputType && stepIndex < 3) {
             setTimeout(() => addBotMessage(stepIndex + 1), 600);
         }
-    };
+    }, [conversationFlow]);
 
-    const handleUserResponse = (response: string, nextStep: number) => {
+    useEffect(() => {
+        // Start the conversation
+        addBotMessage(0);
+    }, []);
+
+    useEffect(() => {
+        // Auto scroll to bottom when messages change
+        if (messages.length > 0) {
+            setTimeout(() => {
+                scrollViewRef.current?.scrollToEnd({ animated: true });
+            }, 150);
+        }
+    }, [messages.length]);
+
+    const handleUserResponse = useCallback((response: string, nextStep: number) => {
         setMessages(prev => [...prev, {
             id: `user-${nextStep}`,
             type: 'user',
@@ -372,9 +632,19 @@ export default function OnboardingScreen() {
         }]);
 
         setTimeout(() => addBotMessage(nextStep), 500);
-    };
+    }, [addBotMessage]);
 
-    const handleSubmit = async () => {
+    const calculateCalories = useCallback((): number => {
+        const { weight, height, age, gender, goal } = formData;
+        let bmr = 10 * weight + 6.25 * height - 5 * age;
+        bmr += gender === 'male' ? 5 : -161;
+        let tdee = bmr * 1.5;
+        if (goal === 'Weight Loss') tdee -= 500;
+        else if (goal === 'Muscle Gain') tdee += 300;
+        return Math.round(tdee);
+    }, [formData]);
+
+    const handleSubmit = useCallback(async () => {
         setIsLoading(true);
         try {
             const { data: { user } } = await supabase.auth.getUser();
@@ -402,291 +672,17 @@ export default function OnboardingScreen() {
         } finally {
             setIsLoading(false);
         }
-    };
-
-    const calculateCalories = (): number => {
-        const { weight, height, age, gender, goal } = formData;
-        let bmr = 10 * weight + 6.25 * height - 5 * age;
-        bmr += gender === 'male' ? 5 : -161;
-        let tdee = bmr * 1.5;
-        if (goal === 'Weight Loss') tdee -= 500;
-        else if (goal === 'Muscle Gain') tdee += 300;
-        return Math.round(tdee);
-    };
+    }, [formData, calculateCalories]);
 
     const currentInputType = conversationFlow[currentStep]?.inputType;
 
-    const renderInputArea = () => {
-        // Show input area when not typing and current step has an input type
-        if (isTyping || !currentInputType) return null;
-
-        switch (currentInputType) {
-            case 'weight':
-                return (
-                    <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
-                        <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
-                            Weight (kg)
-                        </Text>
-                        <ScrollPicker
-                            min={30}
-                            max={200}
-                            value={formData.weight}
-                            onChange={(val) => setFormData({ ...formData, weight: val })}
-                            colors={colors}
-                        />
-                        <TouchableOpacity
-                            onPress={() => handleUserResponse(`${formData.weight} kg`, currentStep + 1)}
-                            style={{ marginTop: 12 }}
-                        >
-                            <LinearGradient
-                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
-                                style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
-                            >
-                                <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
-                                <ChevronRight size={18} color="#fff" />
-                            </LinearGradient>
-                        </TouchableOpacity>
-                    </View>
-                );
-
-            case 'height':
-                return (
-                    <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
-                        <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
-                            Height (cm)
-                        </Text>
-                        <ScrollPicker
-                            min={100}
-                            max={220}
-                            value={formData.height}
-                            onChange={(val) => setFormData({ ...formData, height: val })}
-                            colors={colors}
-                        />
-                        <TouchableOpacity
-                            onPress={() => handleUserResponse(`${formData.height} cm`, currentStep + 1)}
-                            style={{ marginTop: 12 }}
-                        >
-                            <LinearGradient
-                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
-                                style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
-                            >
-                                <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
-                                <ChevronRight size={18} color="#fff" />
-                            </LinearGradient>
-                        </TouchableOpacity>
-                    </View>
-                );
-
-            case 'gender':
-                return (
-                    <View style={{ marginBottom: 16 }}>
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                            {genderOptions.map((option) => (
-                                <OptionCard
-                                    key={option.value}
-                                    label={option.label}
-                                    icon={option.icon}
-                                    isSelected={formData.gender === option.value}
-                                    onPress={() => {
-                                        setFormData({ ...formData, gender: option.value });
-                                        setTimeout(() => handleUserResponse(option.label, currentStep + 1), 300);
-                                    }}
-                                    colors={colors}
-                                />
-                            ))}
-                        </View>
-                    </View>
-                );
-
-            case 'age':
-                return (
-                    <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
-                        <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
-                            Age (years)
-                        </Text>
-                        <ScrollPicker
-                            min={13}
-                            max={90}
-                            value={formData.age}
-                            onChange={(val) => setFormData({ ...formData, age: val })}
-                            suffix=" yrs"
-                            colors={colors}
-                        />
-                        <TouchableOpacity
-                            onPress={() => handleUserResponse(`${formData.age} years old`, currentStep + 1)}
-                            style={{ marginTop: 12 }}
-                        >
-                            <LinearGradient
-                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
-                                style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
-                            >
-                                <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
-                                <ChevronRight size={18} color="#fff" />
-                            </LinearGradient>
-                        </TouchableOpacity>
-                    </View>
-                );
-
-            case 'goal':
-                return (
-                    <View style={{ marginBottom: 16 }}>
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                            {goals.map((goal) => (
-                                <OptionCard
-                                    key={goal.value}
-                                    label={goal.value}
-                                    icon={goal.icon}
-                                    isSelected={formData.goal === goal.value}
-                                    onPress={() => {
-                                        setFormData({ ...formData, goal: goal.value });
-                                        setTimeout(() => handleUserResponse(goal.value, currentStep + 1), 300);
-                                    }}
-                                    colors={colors}
-                                />
-                            ))}
-                        </View>
-                    </View>
-                );
-
-            case 'targetWeight':
-                return (
-                    <View style={{ backgroundColor: colors.card || colors.secondary, borderRadius: 16, padding: 16, marginBottom: 16 }}>
-                        <Text style={{ color: colors.foreground, fontWeight: '600', textAlign: 'center', marginBottom: 8 }}>
-                            Target Weight (kg)
-                        </Text>
-                        <ScrollPicker
-                            min={30}
-                            max={200}
-                            value={formData.targetWeight}
-                            onChange={(val) => setFormData({ ...formData, targetWeight: val })}
-                            colors={colors}
-                        />
-                        <TouchableOpacity
-                            onPress={() => handleUserResponse(`${formData.targetWeight} kg`, currentStep + 1)}
-                            style={{ marginTop: 12 }}
-                        >
-                            <LinearGradient
-                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
-                                style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
-                            >
-                                <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
-                                <ChevronRight size={18} color="#fff" />
-                            </LinearGradient>
-                        </TouchableOpacity>
-                    </View>
-                );
-
-            case 'activities':
-                return (
-                    <View style={{ marginBottom: 16 }}>
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                            {activityOptions.map((activity) => (
-                                <OptionCard
-                                    key={activity.value}
-                                    label={activity.label}
-                                    icon={activity.icon}
-                                    isSelected={formData.preferredTasks.includes(activity.value)}
-                                    onPress={() => {
-                                        const newTasks = formData.preferredTasks.includes(activity.value)
-                                            ? formData.preferredTasks.filter(t => t !== activity.value)
-                                            : [...formData.preferredTasks, activity.value];
-                                        setFormData({ ...formData, preferredTasks: newTasks });
-                                    }}
-                                    colors={colors}
-                                    small
-                                />
-                            ))}
-                        </View>
-                        {formData.preferredTasks.length > 0 && (
-                            <TouchableOpacity
-                                onPress={() => handleUserResponse(formData.preferredTasks.map(t =>
-                                    activityOptions.find(a => a.value === t)?.label || t
-                                ).join(', '), currentStep + 1)}
-                                style={{ marginTop: 8 }}
-                            >
-                                <LinearGradient
-                                    colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
-                                    style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
-                                >
-                                    <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
-                                    <ChevronRight size={18} color="#fff" />
-                                </LinearGradient>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                );
-
-            case 'allergies':
-                return (
-                    <View style={{ marginBottom: 16 }}>
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                            {allergyOptions.map((allergy) => (
-                                <OptionCard
-                                    key={allergy}
-                                    label={allergy}
-                                    isSelected={formData.allergies.includes(allergy)}
-                                    onPress={() => {
-                                        if (allergy === 'None') {
-                                            setFormData({ ...formData, allergies: ['None'] });
-                                        } else {
-                                            const newAllergies = formData.allergies.includes(allergy)
-                                                ? formData.allergies.filter(a => a !== allergy)
-                                                : [...formData.allergies.filter(a => a !== 'None'), allergy];
-                                            setFormData({ ...formData, allergies: newAllergies });
-                                        }
-                                    }}
-                                    colors={colors}
-                                    small
-                                />
-                            ))}
-                        </View>
-                        <TouchableOpacity
-                            onPress={() => handleUserResponse(
-                                formData.allergies.length > 0 ? formData.allergies.join(', ') : 'No allergies',
-                                currentStep + 1
-                            )}
-                            style={{ marginTop: 8 }}
-                        >
-                            <LinearGradient
-                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
-                                style={{ paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
-                            >
-                                <Text style={{ color: '#fff', fontWeight: '600', marginRight: 6 }}>Continue</Text>
-                                <ChevronRight size={18} color="#fff" />
-                            </LinearGradient>
-                        </TouchableOpacity>
-                    </View>
-                );
-
-            case 'confirm':
-                return (
-                    <View style={{ marginBottom: 16 }}>
-                        <TouchableOpacity onPress={handleSubmit} disabled={isLoading}>
-                            <LinearGradient
-                                colors={[colors.gradientStart || '#22c55e', colors.gradientEnd || '#14b8a6']}
-                                style={{
-                                    paddingVertical: 18,
-                                    borderRadius: 16,
-                                    alignItems: 'center',
-                                    opacity: isLoading ? 0.7 : 1,
-                                }}
-                            >
-                                {isLoading ? (
-                                    <ActivityIndicator color="#fff" />
-                                ) : (
-                                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 17 }}>
-                                        🚀 Let's Go!
-                                    </Text>
-                                )}
-                            </LinearGradient>
-                        </TouchableOpacity>
-                    </View>
-                );
-
-            default:
-                return null;
+    // Pre-compute the last bot message index outside the render loop
+    const lastBotIndex = useMemo(() => {
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].type === 'bot') return i;
         }
-    };
+        return -1;
+    }, [messages]);
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
@@ -699,7 +695,7 @@ export default function OnboardingScreen() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <LottieView
-                                source={{ uri: 'https://lottie.host/67866d35-74bb-4d0a-82d8-3201d5f54bef/N6cgEFzQDP.lottie' }}
+                                source={LOTTIE_BOT_SOURCE}
                                 style={{ width: 50, height: 50 }}
                                 autoPlay
                                 loop
@@ -734,16 +730,12 @@ export default function OnboardingScreen() {
                     keyboardShouldPersistTaps="handled"
                 >
                     {messages.map((msg, index) => {
-                        // Find if this is the last bot message
-                        const lastBotIndex = messages.map((m, i) => m.type === 'bot' ? i : -1).filter(i => i !== -1).pop();
-                        const isLastBotMessage = msg.type === 'bot' && index === lastBotIndex;
-
                         return msg.type === 'bot' ? (
                             <BotBubble
                                 key={msg.id}
                                 content={msg.content}
                                 showAvatar={index === 0 || messages[index - 1]?.type !== 'bot'}
-                                isLatest={isLastBotMessage}
+                                isLatest={index === lastBotIndex}
                                 colors={colors}
                             />
                         ) : (
@@ -753,8 +745,19 @@ export default function OnboardingScreen() {
 
                     {isTyping && <TypingIndicator colors={colors} />}
 
-                    {/* Inline Input Selector - rendered inside chat */}
-                    {renderInputArea()}
+                    {/* Inline Input Selector - rendered inside chat as memoized component */}
+                    {!isTyping && (
+                        <InputArea
+                            inputType={currentInputType}
+                            formData={formData}
+                            setFormData={setFormData}
+                            handleUserResponse={handleUserResponse}
+                            handleSubmit={handleSubmit}
+                            isLoading={isLoading}
+                            currentStep={currentStep}
+                            colors={colors}
+                        />
+                    )}
                 </ScrollView>
             </KeyboardAvoidingView>
 

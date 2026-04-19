@@ -74,7 +74,10 @@ export type DailyLog = {
     water_ml: number;
     steps: number;
     active_minutes: number;
-    google_fit_data: Record<string, unknown>;
+    distance_km?: number;
+    active_calories?: number;
+    total_calories_with_bmr?: number;
+    google_fit_data: any;
     created_at: string;
     updated_at: string;
 };

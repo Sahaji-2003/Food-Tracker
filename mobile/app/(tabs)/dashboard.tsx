@@ -1188,17 +1188,42 @@ export default function DashboardScreen() {
     const completedTasks = tasks.filter(t => t.status === 'completed');
     const calorieTarget = profile?.daily_calorie_target || 2000;
     const caloriesIn = dailyLog?.calories_in || 0;
-    const caloriesOut = dailyLog?.calories_out || 0;
-    const netCalories = caloriesIn - caloriesOut;
+    
+    // Baseline data
+    const distanceKm = dailyLog?.distance_km || 0;
+    const dbSteps = dailyLog?.steps || 0;
+
+    // Fallback: Estimate steps from distance if steps are missing
+    const displaySteps = dbSteps > 0 ? dbSteps : Math.round(distanceKm * 1312);
+
+    // Extract active vs total calories safely
+    const googleFitData = dailyLog?.google_fit_data as any;
+    let activeCalories = dailyLog?.active_calories || googleFitData?.active_calories_only || 0;
+    const totalCaloriesBurned = dailyLog?.total_calories_with_bmr || dailyLog?.calories_out || googleFitData?.total_calories_with_bmr || 0;
+
+    // Additional active calories from manual tasks
+    const totalWorkoutMinutes = completedTasks.reduce((sum, t) => sum + t.duration_minutes, 0);
+    const manualWorkoutCalories = completedTasks.reduce((sum, t) => sum + t.calories_to_burn, 0);
+
+    // Fallback: If no Active Calories came from Health Connect, estimate it
+    if (activeCalories === 0 && displaySteps > 0) {
+        activeCalories = Math.round(displaySteps * 0.04);
+    }
+    
+    // Merge manual and tracked active calories
+    activeCalories = Math.max(activeCalories, manualWorkoutCalories);
+
+    // BMR rest estimation
+    const restingCalories = Math.max(totalCaloriesBurned - activeCalories, 1400);
+
+    // Set MAIN display burned variable (ignoring BMR total)
+    const displayBurned = activeCalories;
+
+    // Net calculations using only ACTIVE calories!
+    const netCalories = caloriesIn - displayBurned;
     const remaining = Math.max(calorieTarget - netCalories, 0);
     const overCalories = Math.max(netCalories - calorieTarget, 0);
     const isOverTarget = netCalories > calorieTarget;
-
-    // Extract active vs total calories from google_fit_data for BMR breakdown
-    const googleFitData = dailyLog?.google_fit_data as any;
-    const activeCalories = googleFitData?.active_calories || 0;
-    const totalCaloriesBurned = caloriesOut;
-    const restingCalories = Math.max(totalCaloriesBurned - activeCalories, 0);
 
     // Check if user met their goal (within 50 cal tolerance)
     const goalMet = netCalories >= calorieTarget - 50 && netCalories <= calorieTarget + 50 && caloriesIn > 0;
@@ -1239,7 +1264,7 @@ export default function DashboardScreen() {
             },
             burned: {
                 title: 'Calories Burned',
-                description: `Your body burned ${formatCalories(caloriesOut)} Cal today — even at rest!\n\n🏠 Resting: ${formatCalories(restingCalories)} Cal (breathing, digestion)\n🏃 Exercise: ${formatCalories(activeCalories)} Cal (walking, workouts)`,
+                description: `Your body burned ${formatCalories(totalCaloriesBurned)} Cal today in total!\n\n🏠 Resting: ${formatCalories(restingCalories)} Cal (breathing, digestion)\n🏃 Exercise: ${formatCalories(displayBurned)} Cal (walking, workouts)`,
                 color: '#f59e0b',
             },
             goal_left: {
@@ -1268,10 +1293,8 @@ export default function DashboardScreen() {
     const waterTarget = profile?.daily_water_target || 2500;
     const waterMl = dailyLog?.water_ml || 0;
 
-    // Calculate activity stats
-    const totalSteps = dailyLog?.steps || 0;
-    const totalActiveMinutes = dailyLog?.active_minutes || 0;
-    const totalWorkoutMinutes = completedTasks.reduce((sum, t) => sum + t.duration_minutes, 0);
+    // Calculate activity stats (using new fallbacks)
+    const totalActiveMinutes = dailyLog?.active_minutes || Math.round(displaySteps / 100);
 
     const markdownStyles = {
         body: { color: colors.mutedForeground, fontSize: 14, lineHeight: 20 },
@@ -1374,17 +1397,16 @@ export default function DashboardScreen() {
                         )}
                     </View>
 
-                    {/* Smart Notifications */}
                     <SmartNotifications
                         data={{
                             caloriesIn,
-                            caloriesOut,
+                            caloriesOut: displayBurned,
                             calorieTarget,
-                            steps: totalSteps,
+                            steps: displaySteps,
                             waterMl,
                             waterTarget,
                             userName: user?.email || '',
-                            activeCalories,
+                            activeCalories: displayBurned,
                             totalCalories: totalCaloriesBurned,
                         }}
                         colors={colors}
@@ -1403,9 +1425,9 @@ export default function DashboardScreen() {
                         <CircularProgress
                             consumed={caloriesIn}
                             target={calorieTarget}
-                            burned={caloriesOut}
+                            burned={displayBurned}
                             restingCal={restingCalories}
-                            exerciseCal={activeCalories}
+                            exerciseCal={displayBurned}
                             size={160}
                             strokeWidth={14}
                             colors={colors}
@@ -1447,7 +1469,7 @@ export default function DashboardScreen() {
                             >
                                 <Flame size={18} color="#f59e0b" style={{ marginBottom: 4 }} />
                                 <Text style={{ color: '#f59e0b', fontWeight: '700', fontSize: 18 }}>
-                                    {formatCalories(caloriesOut)}
+                                    {formatCalories(displayBurned)}
                                 </Text>
                                 <Text style={{ color: colors.mutedForeground, fontSize: 9, marginTop: 1 }}>Cal</Text>
                                 <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Burned</Text>
@@ -1522,7 +1544,7 @@ export default function DashboardScreen() {
                     >
                         <ActivityStatCard
                             icon={Footprints}
-                            value={totalSteps.toLocaleString()}
+                            value={displaySteps.toLocaleString()}
                             label="Steps"
                             color="#22c55e"
                             colors={colors}
@@ -1543,14 +1565,14 @@ export default function DashboardScreen() {
                         />
                         <ActivityStatCard
                             icon={Heart}
-                            value={formatCalories(caloriesOut)}
+                            value={formatCalories(displayBurned)}
                             label="Cal Burned"
                             color="#ef4444"
                             colors={colors}
                         />
                         <ActivityStatCard
                             icon={Bike}
-                            value={`${((totalSteps * 0.0008).toFixed(1))}`}
+                            value={`${((displaySteps * 0.0008).toFixed(1))}`}
                             label="Km Walked"
                             color="#8b5cf6"
                             colors={colors}
