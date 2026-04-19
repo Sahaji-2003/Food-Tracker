@@ -129,7 +129,8 @@ export default function ChatScreen() {
             }
 
             const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ['images'],
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: false, // Prevents Android cropping bugs
                 quality: 0.8,
                 base64: true,
             });

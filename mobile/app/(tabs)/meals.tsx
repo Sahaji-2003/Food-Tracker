@@ -101,45 +101,52 @@ export default function MealsScreen() {
     };
 
     const pickImage = async (useCamera: boolean) => {
-        let result;
+        try {
+            let result;
 
-        if (useCamera) {
-            const { status } = await ImagePicker.requestCameraPermissionsAsync();
-            if (status !== 'granted') {
-                showAlert({
-                    title: 'Permission Needed',
-                    message: 'Camera access is required to take photos.',
-                    type: 'warning',
+            if (useCamera) {
+                const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                if (status !== 'granted') {
+                    showAlert({
+                        title: 'Permission Needed',
+                        message: 'Camera access is required to take photos.',
+                        type: 'warning',
+                    });
+                    return;
+                }
+                result = await ImagePicker.launchCameraAsync({
+                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                    allowsEditing: false, // Prevents Android Crop Intent from silently failing Native Camera
+                    quality: 0.8,
                 });
-                return;
-            }
-            result = await ImagePicker.launchCameraAsync({
-                mediaTypes: ['images'],
-                allowsEditing: true,
-                aspect: [4, 3],
-                quality: 0.8,
-            });
-        } else {
-            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (status !== 'granted') {
-                showAlert({
-                    title: 'Permission Needed',
-                    message: 'Gallery access is required to select photos.',
-                    type: 'warning',
+            } else {
+                const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (status !== 'granted') {
+                    showAlert({
+                        title: 'Permission Needed',
+                        message: 'Gallery access is required to select photos.',
+                        type: 'warning',
+                    });
+                    return;
+                }
+                result = await ImagePicker.launchImageLibraryAsync({
+                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                    allowsEditing: false, // Prevents freezing at Android Crop checkmark
+                    quality: 0.8,
                 });
-                return;
             }
-            result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ['images'],
-                allowsEditing: true,
-                aspect: [4, 3],
-                quality: 0.8,
-            });
-        }
 
-        if (!result.canceled && result.assets[0]) {
-            setSelectedImage(result.assets[0].uri);
-            analyzeImage(result.assets[0].uri);
+            if (!result.canceled && result.assets && result.assets[0]) {
+                setSelectedImage(result.assets[0].uri);
+                analyzeImage(result.assets[0].uri);
+            }
+        } catch (error: any) {
+            console.error('ImagePicker Error:', error);
+            showAlert({
+                title: 'Error',
+                message: 'Failed to access camera or gallery. Please check app permissions.',
+                type: 'error',
+            });
         }
     };
 

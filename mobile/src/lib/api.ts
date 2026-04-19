@@ -60,6 +60,7 @@ export const mealAPI = {
     analyze: async (formData: FormData) => {
         const response = await api.post('/api/meals/analyze', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
+            transformRequest: (data) => data,
         });
         return response.data;
     },
@@ -110,6 +111,7 @@ export const suggestionAPI = {
     fromMenu: async (formData: FormData) => {
         const response = await api.post('/api/suggestions/menu', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
+            transformRequest: (data) => data,
         });
         return response.data;
     },
@@ -117,6 +119,7 @@ export const suggestionAPI = {
     fromPantry: async (formData: FormData) => {
         const response = await api.post('/api/suggestions/cooking', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
+            transformRequest: (data) => data,
         });
         return response.data;
     },
@@ -138,6 +141,7 @@ export const chatAPI = {
             } as any);
             const response = await api.post('/api/chat/vision', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
+                transformRequest: (data) => data,
             });
             return response.data;
         }
